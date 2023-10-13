@@ -29,7 +29,6 @@ func extendAddresses(extIdx, intIdx uint32, ltcw *wallet.Wallet) error {
 	}
 
 	return walletdb.Update(ltcw.Database(), func(dbtx walletdb.ReadWriteTx) error {
-		var waddrmgrNamespace = []byte("waddrmgr")
 		ns := dbtx.ReadWriteBucket(waddrmgrNamespace)
 		if extIdx > 0 {
 			scopedKeyManager.ExtendExternalAddresses(ns, ltcwaddrmgr.DefaultAccountNum, extIdx)

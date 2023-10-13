@@ -29,7 +29,6 @@ func extendAddresses(extIdx, intIdx uint32, btcw *wallet.Wallet) error {
 	}
 
 	return walletdb.Update(btcw.Database(), func(dbtx walletdb.ReadWriteTx) error {
-		var wAddrMgrBkt = []byte("waddrmgr")
 		ns := dbtx.ReadWriteBucket(wAddrMgrBkt)
 		if extIdx > 0 {
 			if err := scopedKeyManager.ExtendExternalAddresses(ns, waddrmgr.DefaultAccountNum, extIdx); err != nil {

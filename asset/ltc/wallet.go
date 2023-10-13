@@ -4,13 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/decred/slog"
+	"github.com/itswisdomagain/libwallet/asset"
 	"github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcwallet/wallet"
 	"github.com/ltcsuite/ltcwallet/walletdb"
 	_ "github.com/ltcsuite/ltcwallet/walletdb/bdb"
 )
+
+var waddrmgrNamespace = []byte("waddrmgr")
 
 type mainWallet = wallet.Wallet
 
@@ -23,6 +27,9 @@ type Wallet struct {
 	loader *wallet.Loader
 	db     walletdb.DB
 	*mainWallet
+
+	syncMtx sync.Mutex
+	syncer  *asset.SyncHelper
 }
 
 // OpenWallet opens the wallet database and the wallet.
@@ -62,10 +69,17 @@ func (w *Wallet) OpenWallet() error {
 	return nil
 }
 
+// WalletOpened returns true if the wallet is opened and ready for use.
+func (w *Wallet) WalletOpened() bool {
+	return w.mainWallet != nil
+}
+
 // CloseWallet stops any active network syncrhonization, unloads the wallet and
 // closes the neutrino chain db.
 func (w *Wallet) CloseWallet() error {
-	// TODO: If sync is ongoing, stop the sync first.
+	if err := w.StopSync(); err != nil {
+		return fmt.Errorf("StopSync error: %w", err)
+	}
 
 	if err := w.loader.UnloadWallet(); err != nil {
 		return err

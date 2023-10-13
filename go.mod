@@ -8,6 +8,7 @@ require (
 	github.com/btcsuite/btcwallet/walletdb v1.4.0
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.0
 	github.com/dcrlabs/neutrino-ltc v0.0.0-20221031001456-55ef06cefead
+	github.com/decred/dcrd/addrmgr/v2 v2.0.2
 	github.com/decred/dcrd/chaincfg/v3 v3.2.0
 	github.com/decred/dcrd/connmgr/v3 v3.1.1
 	github.com/decred/slog v1.2.0
@@ -36,7 +37,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
 	github.com/decred/base58 v1.0.5 // indirect
-	github.com/decred/dcrd/addrmgr/v2 v2.0.2 // indirect
 	github.com/decred/dcrd/blockchain/stake/v5 v5.0.0 // indirect
 	github.com/decred/dcrd/blockchain/standalone/v2 v2.2.0 // indirect
 	github.com/decred/dcrd/chaincfg/chainhash v1.0.4 // indirect
