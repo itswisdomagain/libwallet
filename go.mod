@@ -2,6 +2,7 @@ module github.com/itswisdomagain/libwallet
 
 require (
 	decred.org/dcrwallet/v3 v3.0.1
+	github.com/asdine/storm v2.1.2+incompatible
 	github.com/btcsuite/btcd v0.23.4
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/btcsuite/btcwallet v0.16.10-0.20230706223227-037580c66b74
@@ -18,10 +19,12 @@ require (
 	github.com/ltcsuite/ltcwallet v0.13.1
 	github.com/ltcsuite/ltcwallet/walletdb v1.3.5
 	github.com/ltcsuite/ltcwallet/wtxmgr v1.5.0
+	go.etcd.io/bbolt v1.3.7
 )
 
 require (
 	decred.org/cspp/v2 v2.1.0 // indirect
+	github.com/Sereal/Sereal/Go/sereal v0.0.0-20231009093132-b9187f1a92c6 // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/agl/ed25519 v0.0.0-20170116200512-5312a6153412 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.2.2 // indirect
@@ -77,7 +80,8 @@ require (
 	github.com/ltcsuite/ltcwallet/wallet/txrules v1.2.0 // indirect
 	github.com/ltcsuite/ltcwallet/wallet/txsizes v1.1.0 // indirect
 	github.com/ltcsuite/neutrino v0.13.2 // indirect
-	go.etcd.io/bbolt v1.3.7 // indirect
+	github.com/stretchr/testify v1.8.2 // indirect
+	github.com/vmihailenco/msgpack v4.0.4+incompatible // indirect
 	golang.org/x/crypto v0.7.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
