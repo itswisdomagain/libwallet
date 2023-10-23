@@ -28,6 +28,10 @@ type DB[T DBTransaction] struct {
 	makeEmptyTx func() T
 }
 
+// Ensure DB implements UserConfigDB and WalletConfigDB.
+var _ UserConfigDB = (*DB[DBTransaction])(nil)
+var _ WalletConfigDB = (*DB[DBTransaction])(nil)
+
 // Initialize creates or open a database at the specified path. newTxConstructor
 // is optional but must be provided if the database will be used for transaction
 // indexing. If provided, newTxConstructor should be a function that can be used

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/itswisdomagain/libwallet/asset"
+	"github.com/ltcsuite/ltcd/ltcutil/hdkeychain"
 	"github.com/ltcsuite/ltcwallet/wallet"
 	"github.com/ltcsuite/ltcwallet/walletdb"
 	_ "github.com/ltcsuite/ltcwallet/walletdb/bdb"
@@ -37,16 +38,20 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 	}
 
 	var seed []byte
-	if recovery != nil {
+	isRestored := recovery != nil
+	if isRestored {
 		seed = recovery.Seed
 	} else {
-		// TODO: Generate seed.
+		seed, err = hdkeychain.GenerateSeed(hdkeychain.RecommendedSeedLen)
+		if err != nil {
+			return nil, fmt.Errorf("unable to generate random seed: %v", err)
+		}
 	}
 
-	// TODO: Encrypt the seed with the private passphrase and save. Should be
-	// able to reveal the seed for this wallet later by providing the private
-	// passphrase. NOTE: cake wallet might require storing the seed without
-	// encrypting first. Insecure, but ...
+	sw, err := asset.NewSeededWallet(params.ID, seed, params.Pass, isRestored, params.ConfigDB, params.Logger)
+	if err != nil {
+		return nil, fmt.Errorf("init wallet error: %v", err)
+	}
 
 	loader := wallet.NewLoader(chainParams, params.DataDir, true, dbTimeout, 250)
 
@@ -82,13 +87,14 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 
 	bailOnWallet = false
 	return &Wallet{
-		dir:         params.DataDir,
-		dbDriver:    params.DbDriver,
-		chainParams: chainParams,
-		log:         params.Logger,
-		loader:      loader,
-		db:          db,
-		mainWallet:  ltcw,
+		dir:          params.DataDir,
+		dbDriver:     params.DbDriver,
+		chainParams:  chainParams,
+		log:          params.Logger,
+		loader:       loader,
+		db:           db,
+		SeededWallet: sw,
+		mainWallet:   ltcw,
 	}, nil
 }
 
@@ -106,12 +112,16 @@ func LoadWallet(ctx context.Context, params asset.OpenWalletParams) (*Wallet, er
 		return nil, fmt.Errorf("error parsing chain params: %w", err)
 	}
 
-	// TODO: Load the (encrypted) seed as well.
+	sw, err := asset.SeededWalletFromDB(params.ID, params.ConfigDB, params.Logger)
+	if err != nil {
+		return nil, fmt.Errorf("load wallet info from db error: %v", err)
+	}
 
 	return &Wallet{
-		dir:         params.DataDir,
-		dbDriver:    params.DbDriver,
-		chainParams: chainParams,
-		log:         params.Logger,
+		dir:          params.DataDir,
+		dbDriver:     params.DbDriver,
+		chainParams:  chainParams,
+		log:          params.Logger,
+		SeededWallet: sw,
 	}, nil
 }

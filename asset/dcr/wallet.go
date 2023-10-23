@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"sync"
 
+	"decred.org/dcrwallet/v3/errors"
 	"decred.org/dcrwallet/v3/wallet"
 	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/slog"
+	"github.com/itswisdomagain/libwallet/asset"
 )
 
 type mainWallet = wallet.Wallet
@@ -20,6 +22,7 @@ type Wallet struct {
 	log         slog.Logger
 
 	db wallet.DB
+	*asset.SeededWallet
 	*mainWallet
 
 	syncMtx sync.Mutex
@@ -75,5 +78,39 @@ func (w *Wallet) CloseWallet() error {
 	w.log.Debug("DCR wallet closed")
 	w.mainWallet = nil
 	w.db = nil
+	return nil
+}
+
+// ChangePassphrase changes the wallet's private passphrase. If provided, the
+// finalize function would be called after the passphrase change is complete. If
+// that function returns an error, the passphrase change will be reverted.
+func (w *Wallet) ChangePassphrase(ctx context.Context, oldPass, newPass []byte, finalize func() error) (err error) {
+	err = w.ChangePrivatePassphrase(ctx, oldPass, newPass)
+	if err != nil {
+		if err, ok := err.(*errors.Error); ok && err.Kind == errors.Passphrase {
+			return asset.ErrInvalidPassphrase
+		}
+		return err
+	}
+
+	revertPassphraseChange := func() {
+		if err = w.ChangePrivatePassphrase(ctx, newPass, oldPass); err != nil {
+			w.log.Errorf("failed to undo wallet passphrase change: %w", err)
+		}
+	}
+
+	if err = w.ReEncryptSeed(oldPass, newPass); err != nil {
+		revertPassphraseChange()
+		return fmt.Errorf("error re-encrypting wallet seed: %v", err)
+	}
+
+	if finalize != nil {
+		if err = finalize(); err != nil {
+			revertPassphraseChange()
+			w.log.Errorf("error finalizing passphrase change: %v", err)
+			return err
+		}
+	}
+
 	return nil
 }

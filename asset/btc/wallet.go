@@ -27,6 +27,7 @@ type Wallet struct {
 
 	loader *wallet.Loader
 	db     walletdb.DB
+	*asset.SeededWallet
 	*mainWallet
 
 	syncMtx sync.Mutex
@@ -126,4 +127,35 @@ func (w *Wallet) SetBirthday(newBday time.Time) error {
 		}
 		return nil
 	})
+}
+
+// ChangePassphrase changes the wallet's private passphrase. If provided, the
+// finalize function would be called after the passphrase change is complete. If
+// that function returns an error, the passphrase change will be reverted.
+func (w *Wallet) ChangePassphrase(oldPass, newPass []byte, finalize func() error) (err error) {
+	err = w.ChangePrivatePassphrase(oldPass, newPass)
+	if err != nil {
+		return err
+	}
+
+	revertPassphraseChange := func() {
+		if err = w.ChangePrivatePassphrase(newPass, oldPass); err != nil {
+			w.log.Errorf("failed to undo wallet passphrase change: %w", err)
+		}
+	}
+
+	if err = w.ReEncryptSeed(oldPass, newPass); err != nil {
+		revertPassphraseChange()
+		return fmt.Errorf("error re-encrypting wallet seed: %v", err)
+	}
+
+	if finalize != nil {
+		if err = finalize(); err != nil {
+			revertPassphraseChange()
+			w.log.Errorf("error finalizing passphrase change: %v", err)
+			return err
+		}
+	}
+
+	return nil
 }

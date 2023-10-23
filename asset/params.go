@@ -4,7 +4,13 @@ import (
 	"time"
 
 	"github.com/decred/slog"
+	"github.com/itswisdomagain/libwallet/walletdata"
 )
+
+type WalletDataDB interface {
+	walletdata.UserConfigDB
+	walletdata.WalletConfigDB
+}
 
 // CreateWalletParams are the parameters for opening a wallet.
 type OpenWalletParams struct {
@@ -12,6 +18,10 @@ type OpenWalletParams struct {
 	DataDir  string
 	DbDriver string
 	Logger   slog.Logger
+	ConfigDB WalletDataDB
+
+	// ID is temporary. Remove!
+	ID int
 }
 
 // CreateWalletParams are the parameters for creating a wallet.
