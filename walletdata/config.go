@@ -1,18 +1,9 @@
 package walletdata
 
-import (
-	"github.com/asdine/storm"
-)
-
 const (
 	userConfigBktName   = "user_config"
 	walletConfigBktName = "wallet_config"
 )
-
-// ErrNotFound is the error returned when a requested data is not found in the
-// db. It is the same as storm.ErrNotFound but defined here so that callers
-// don't need to reference the storm package.
-var ErrNotFound = storm.ErrNotFound
 
 // SaveUserConfigValue saves user configuration data as a key-value pair.
 func (db *DB[T]) SaveUserConfigValue(key string, value interface{}) error {

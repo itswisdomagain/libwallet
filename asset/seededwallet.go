@@ -19,7 +19,6 @@ const (
 type SeededWallet struct {
 	// UserConfigDB is publicly embedded, so consumers can read from/write to
 	// the user config part of the walletdata db.
-	// TODO: Also allow users read/write transaction data.
 	walletdata.UserConfigDB
 
 	// db is private, for internal use only.

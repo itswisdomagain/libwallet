@@ -3,34 +3,34 @@ package walletdata
 import (
 	"fmt"
 	"os"
+	"reflect"
+	"strings"
 
 	"github.com/asdine/storm"
 	bolt "go.etcd.io/bbolt"
 )
 
 const (
-	metadataBktName       = "db_metadata"
-	txVersionKey          = "tx_version"
-	txLastIndexedBlockKey = "tx_last_indexed_block"
+	metadataBktName     = "db_metadata"
+	txVersionKey        = "tx_version"
+	txIndexLastBlockKey = "tx_index_last_block"
 )
 
-// DBTransaction defines methods that must be implemented by the transaction
-// struct of an asset.
-type DBTransaction interface {
-	TxVersion() uint32
+// DB is a storm-backed database for storing simple information in key-value
+// pairs for a wallet. It can also be optionally used to index a wallet's
+// transactions for subsequent quick querying and filtering.
+type DB[T any] struct {
+	db *storm.DB
+
+	makeEmptyTx       func() *T
+	txVersion         uint32
+	uniqueTxFieldName string
 }
 
-// DB is a database for storing simple information in key-value pairs for a
-// wallet. It can also be optionally used to index a wallet's transactions for
-// subsequent quick querying and filtering.
-type DB[T DBTransaction] struct {
-	db          *storm.DB
-	makeEmptyTx func() T
-}
-
-// Ensure DB implements UserConfigDB and WalletConfigDB.
-var _ UserConfigDB = (*DB[DBTransaction])(nil)
-var _ WalletConfigDB = (*DB[DBTransaction])(nil)
+// Ensure DB implements UserConfigDB, WalletConfigDB and TxIndexDB.
+var _ UserConfigDB = (*DB[struct{}])(nil)
+var _ WalletConfigDB = (*DB[struct{}])(nil)
+var _ TxIndexDB[struct{}] = (*DB[struct{}])(nil)
 
 // Initialize creates or open a database at the specified path. newTxConstructor
 // is optional but must be provided if the database will be used for transaction
@@ -39,7 +39,7 @@ var _ WalletConfigDB = (*DB[DBTransaction])(nil)
 // by the newTxConstructor returns a TxVersion that is different from the
 // version last used by this database, the transactions index will be dropped
 // and the wallet's transactions will need to be re-indexed.
-func Initialize[T DBTransaction](dbPath string, newTxConstructor func() T) (*DB[T], error) {
+func Initialize[T any](dbPath string, newTxConstructor func() T, latestTxVersion uint32) (*DB[T], error) {
 	if newTxConstructor == nil {
 		db, _, err := openOrCreateDB(dbPath, 0)
 		if err != nil {
@@ -48,8 +48,6 @@ func Initialize[T DBTransaction](dbPath string, newTxConstructor func() T) (*DB[
 		return &DB[T]{db: db}, nil
 	}
 
-	sampleTx := newTxConstructor()
-	latestTxVersion := sampleTx.TxVersion()
 	db, dbTxVersion, err := openOrCreateDB(dbPath, latestTxVersion)
 	if err != nil {
 		return nil, err
@@ -57,12 +55,13 @@ func Initialize[T DBTransaction](dbPath string, newTxConstructor func() T) (*DB[
 
 	if dbTxVersion != latestTxVersion {
 		// Delete previously indexed transactions.
+		sampleTx := newTxConstructor()
 		if err = db.Drop(sampleTx); err != nil {
 			return nil, fmt.Errorf("error deleting outdated wallet transactions: %s", err.Error())
 		}
-		// Reset the last indexed block value, so the db consumer knows to
+		// Reset the tx index last block value, so the db consumer knows to
 		// re-index transactions from scratch.
-		if err = db.Set(metadataBktName, txLastIndexedBlockKey, 0); err != nil {
+		if err = db.Set(metadataBktName, txIndexLastBlockKey, 0); err != nil {
 			return nil, fmt.Errorf("error updating txVersion: %s", err.Error())
 		}
 		// This db is now on the latest tx version.
@@ -71,13 +70,27 @@ func Initialize[T DBTransaction](dbPath string, newTxConstructor func() T) (*DB[
 		}
 	}
 
+	// The uniqueTxField will be used for checking for existing transactions.
+	// TODO: Also read all indexed fields and check that all field names used in
+	// tx lookups are indexed. Additionally, if the list of indexed fields found
+	// now differs from what was last used, reindex the database.
+	sampleTx := newTxConstructor()
+	uniqueTxField, ok := uniqueFieldName(sampleTx)
+	if !ok {
+		return nil, fmt.Errorf("tx object does not have a unique field")
+	}
+
 	// Initialize the tx index bucket.
 	err = db.Init(sampleTx)
 	if err != nil {
 		return nil, fmt.Errorf("error initializing tx index bucket: %s", err.Error())
 	}
 
-	return &DB[T]{db: db}, nil
+	return &DB[T]{
+		db:                db,
+		txVersion:         latestTxVersion,
+		uniqueTxFieldName: uniqueTxField,
+	}, nil
 }
 
 // openOrCreateDB checks if a db file exists at the specified path, opens it and
@@ -122,4 +135,19 @@ func openOrCreateDB(dbPath string, latestTxVersion uint32) (*storm.DB, uint32, e
 	}
 
 	return db, dbTxVersion, nil
+}
+
+func uniqueFieldName(elem any) (string, bool) {
+	elemType := reflect.TypeOf(elem)
+	if elemType.Kind() == reflect.Pointer {
+		elemType = elemType.Elem()
+	}
+	nFields := elemType.NumField()
+	for i := 0; i < nFields; i++ {
+		field := elemType.Field(i)
+		if strings.Index(field.Tag.Get("storm"), "unique") > 0 {
+			return field.Name, true
+		}
+	}
+	return "", false
 }
