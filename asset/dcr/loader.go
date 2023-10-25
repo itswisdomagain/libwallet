@@ -55,9 +55,9 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 		}
 	}
 
-	sw, err := asset.NewSeededWallet(params.ID, seed, params.Pass, isRestored, params.ConfigDB, params.Logger)
+	wb, err := asset.CreateWalletBase(params.OpenWalletParams, seed, params.Pass, isRestored)
 	if err != nil {
-		return nil, fmt.Errorf("init wallet error: %v", err)
+		return nil, fmt.Errorf("CreateWalletBase error: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
@@ -113,13 +113,13 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 
 	bailOnWallet = false
 	return &Wallet{
-		dir:          params.DataDir,
-		dbDriver:     params.DbDriver,
-		chainParams:  chainParams,
-		log:          params.Logger,
-		db:           db,
-		SeededWallet: sw,
-		mainWallet:   w,
+		dir:         params.DataDir,
+		dbDriver:    params.DbDriver,
+		chainParams: chainParams,
+		log:         params.Logger,
+		db:          db,
+		WalletBase:  wb,
+		mainWallet:  w,
 	}, nil
 }
 
@@ -137,16 +137,16 @@ func LoadWallet(ctx context.Context, params asset.OpenWalletParams) (*Wallet, er
 		return nil, fmt.Errorf("error parsing chain params: %w", err)
 	}
 
-	sw, err := asset.SeededWalletFromDB(params.ID, params.ConfigDB, params.Logger)
+	wb, err := asset.OpenWalletBase(params)
 	if err != nil {
-		return nil, fmt.Errorf("load wallet info from db error: %v", err)
+		return nil, fmt.Errorf("OpenWalletBase error: %v", err)
 	}
 
 	return &Wallet{
-		dir:          params.DataDir,
-		dbDriver:     params.DbDriver,
-		chainParams:  chainParams,
-		log:          params.Logger,
-		SeededWallet: sw,
+		dir:         params.DataDir,
+		dbDriver:    params.DbDriver,
+		chainParams: chainParams,
+		log:         params.Logger,
+		WalletBase:  wb,
 	}, nil
 }

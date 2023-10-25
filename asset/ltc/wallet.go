@@ -26,7 +26,7 @@ type Wallet struct {
 
 	loader *wallet.Loader
 	db     walletdb.DB
-	*asset.SeededWallet
+	*asset.WalletBase
 	*mainWallet
 
 	syncMtx sync.Mutex

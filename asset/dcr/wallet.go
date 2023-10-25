@@ -22,7 +22,7 @@ type Wallet struct {
 	log         slog.Logger
 
 	db wallet.DB
-	*asset.SeededWallet
+	*asset.WalletBase
 	*mainWallet
 
 	syncMtx sync.Mutex
@@ -62,6 +62,11 @@ func (w *Wallet) OpenWallet(ctx context.Context) error {
 // WalletOpened returns true if the wallet is opened and ready for use.
 func (w *Wallet) WalletOpened() bool {
 	return w.mainWallet != nil
+}
+
+// MainWallet returns the actual dcr *wallet.Wallet.
+func (w *Wallet) MainWallet() *wallet.Wallet {
+	return w.mainWallet
 }
 
 // CloseWallet stops any active network syncrhonization and closes the wallet
