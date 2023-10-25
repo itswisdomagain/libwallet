@@ -10,7 +10,7 @@ type ParentLogger interface {
 }
 
 // LoggerPlus logs everything to a main logger, and everything with level >= warn
-// to both file and a specified dex.Logger.
+// to a second logger.
 type LoggerPlus struct {
 	slog.Logger
 	log slog.Logger
