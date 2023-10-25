@@ -45,9 +45,10 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 	}
 
 	var seed []byte
-	isRestored := recovery != nil
-	if isRestored {
+	var walletTraits asset.WalletTrait
+	if recovery != nil {
 		seed = recovery.Seed
+		walletTraits = asset.WalletTraitRestored
 	} else {
 		seed, err = hdkeychain.GenerateSeed(hdkeychain.RecommendedSeedLen)
 		if err != nil {
@@ -55,7 +56,7 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 		}
 	}
 
-	wb, err := asset.CreateWalletBase(params.OpenWalletParams, seed, params.Pass, isRestored)
+	wb, err := asset.CreateWalletBase(params.OpenWalletParams, seed, params.Pass, walletTraits)
 	if err != nil {
 		return nil, fmt.Errorf("CreateWalletBase error: %v", err)
 	}
@@ -109,6 +110,78 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 		if err != nil {
 			return nil, fmt.Errorf("failed to set starting address indexes: %w", err)
 		}
+	}
+
+	bailOnWallet = false
+	return &Wallet{
+		dir:         params.DataDir,
+		dbDriver:    params.DbDriver,
+		chainParams: chainParams,
+		log:         params.Logger,
+		db:          db,
+		WalletBase:  wb,
+		mainWallet:  w,
+	}, nil
+}
+
+// CreateWatchOnlyWallet creates and opens a watchonly SPV wallet.
+func CreateWatchOnlyWallet(ctx context.Context, extendedPubKey string, params asset.CreateWalletParams) (*Wallet, error) {
+	chainParams, err := ParseChainParams(params.Net)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing chain params: %w", err)
+	}
+
+	if exists, err := WalletExistsAt(params.DataDir); err != nil {
+		return nil, err
+	} else if exists {
+		return nil, fmt.Errorf("wallet at %q already exists", params.DataDir)
+	}
+
+	// Ensure the data directory for the network exists.
+	if err := checkCreateDir(params.DataDir); err != nil {
+		return nil, fmt.Errorf("check new wallet data directory error: %w", err)
+	}
+
+	wb, err := asset.CreateWalletBase(params.OpenWalletParams, nil, nil, asset.WalletTraitWatchOnly)
+	if err != nil {
+		return nil, fmt.Errorf("CreateWalletBase error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
+	// Create the wallet database using the specified db driver.
+	dbPath := filepath.Join(params.DataDir, walletDbName)
+	db, err := wallet.CreateDB(params.DbDriver, dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("CreateDB error: %w", err)
+	}
+
+	bailOnWallet := true // changed to false if there are no errors below
+	defer func() {
+		if bailOnWallet {
+			err := db.Close()
+			if err != nil {
+				fmt.Println("Error closing database after CreateWallet error:", err)
+			}
+
+			// It was asserted above that there is no existing database file, so
+			// deleting anything won't destroy a wallet in use. Attempt to
+			// remove any wallet remnants.
+			_ = os.Remove(params.DataDir)
+		}
+	}()
+
+	// Initialize the newly created database for the wallet before opening.
+	err = wallet.CreateWatchOnly(ctx, db, extendedPubKey, nil, chainParams)
+	if err != nil {
+		return nil, fmt.Errorf("wallet.Create error: %w", err)
+	}
+
+	// Open the newly-created wallet.
+	w, err := wallet.Open(ctx, newWalletConfig(db, chainParams))
+	if err != nil {
+		return nil, fmt.Errorf("wallet.Open error: %w", err)
 	}
 
 	bailOnWallet = false

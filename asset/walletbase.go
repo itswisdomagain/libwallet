@@ -13,7 +13,7 @@ import (
 
 const (
 	encryptedSeedDBKey            = "encryptedSeed"
-	isRestoredDBKey               = "isRestored"
+	walletTraitsDBKey             = "walletTraits"
 	accountDiscoveryRequiredDBKey = "accountDiscoveryRequired"
 )
 
@@ -28,35 +28,48 @@ type WalletBase struct {
 	dataDir string
 	network Network
 
-	// ID is temporary. Remove!
-	ID int
-
 	mtx                      sync.Mutex
 	encryptedSeed            []byte
-	isRestored               bool
+	traits                   WalletTrait
 	accountDiscoveryRequired bool
 }
 
 // CreateWalletBase initializes a WalletBase using the information provided. The
 // wallet's seed is encrypted and saved, along with other basic wallet info.
-func CreateWalletBase(params OpenWalletParams, seed, walletPass []byte, isRestored bool) (*WalletBase, error) {
-	if len(seed) == 0 {
-		return nil, fmt.Errorf("seed is required")
+func CreateWalletBase(params OpenWalletParams, seed, walletPass []byte, traits WalletTrait) (*WalletBase, error) {
+	isWatchOnly, isRestored := isWatchOnly(traits), isRestored(traits)
+	if isWatchOnly && isRestored {
+		return nil, fmt.Errorf("invalid wallet traits: restored wallet cannot be watch only")
 	}
 
-	encryptedSeed, err := EncryptData(seed, walletPass)
-	if err != nil {
-		return nil, fmt.Errorf("seed encryption error: %v", err)
+	hasSeedAndWalletPass := len(seed) > 0 || len(walletPass) > 0
+
+	switch {
+	case isWatchOnly && hasSeedAndWalletPass:
+		return nil, fmt.Errorf("invalid arguments for watch only wallet")
+	case !isWatchOnly && !hasSeedAndWalletPass:
+		return nil, fmt.Errorf("seed AND private passphrase are required")
 	}
 
 	// Account discovery is only required for restored wallets.
 	accountDiscoveryRequired := isRestored
 
-	// Save the initial data to db.
+	var encryptedSeed []byte
+	var err error
+	if !isWatchOnly {
+		encryptedSeed, err = EncryptData(seed, walletPass)
+		if err != nil {
+			return nil, fmt.Errorf("seed encryption error: %v", err)
+		}
+	}
+
+	// Save wallet data to db.
 	dbData := map[string]any{
-		encryptedSeedDBKey:            encryptedSeed,
-		isRestoredDBKey:               isRestored,
+		walletTraitsDBKey:             traits,
 		accountDiscoveryRequiredDBKey: accountDiscoveryRequired,
+	}
+	if len(encryptedSeed) > 0 {
+		dbData[encryptedSeedDBKey] = encryptedSeed
 	}
 	for key, value := range dbData {
 		if err := params.ConfigDB.SaveWalletConfigValue(key, value); err != nil {
@@ -65,14 +78,12 @@ func CreateWalletBase(params OpenWalletParams, seed, walletPass []byte, isRestor
 	}
 
 	return &WalletBase{
-		ID:                       params.ID,
 		UserConfigDB:             params.ConfigDB,
 		db:                       params.ConfigDB,
 		log:                      params.Logger,
 		dataDir:                  params.DataDir,
 		network:                  params.Net,
 		encryptedSeed:            encryptedSeed,
-		isRestored:               isRestored,
 		accountDiscoveryRequired: accountDiscoveryRequired,
 	}, nil
 }
@@ -81,7 +92,6 @@ func CreateWalletBase(params OpenWalletParams, seed, walletPass []byte, isRestor
 // provided params.
 func OpenWalletBase(params OpenWalletParams) (*WalletBase, error) {
 	w := &WalletBase{
-		ID:           params.ID,
 		UserConfigDB: params.ConfigDB,
 		db:           params.ConfigDB,
 		log:          params.Logger,
@@ -89,16 +99,20 @@ func OpenWalletBase(params OpenWalletParams) (*WalletBase, error) {
 		network:      params.Net,
 	}
 
-	readFromDB := func(key string, wFieldPtr any) error {
-		if err := w.db.ReadWalletConfigValue(key, wFieldPtr); err != nil {
+	readFromDB := func(key string, wFieldPtr any, optional ...bool) error {
+		err := w.db.ReadWalletConfigValue(key, wFieldPtr)
+		if err == storm.ErrNotFound && len(optional) > 0 && optional[0] {
+			return nil
+		}
+		if err != nil {
 			return fmt.Errorf("error reading wallet.%s from db: %v", key, err)
 		}
 		return nil
 	}
-	if err := readFromDB(encryptedSeedDBKey, &w.encryptedSeed); err != nil {
+	if err := readFromDB(encryptedSeedDBKey, &w.encryptedSeed, true); err != nil {
 		return nil, err
 	}
-	if err := readFromDB(isRestoredDBKey, &w.isRestored); err != nil {
+	if err := readFromDB(walletTraitsDBKey, &w.traits); err != nil {
 		return nil, err
 	}
 	if err := readFromDB(accountDiscoveryRequiredDBKey, &w.accountDiscoveryRequired); err != nil {
@@ -198,10 +212,16 @@ func (w *WalletBase) VerifySeed(seedMnemonic string, passphrase []byte) (bool, e
 	return true, nil
 }
 
+func (w *WalletBase) IsWatchOnly() bool {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+	return isWatchOnly(w.traits)
+}
+
 func (w *WalletBase) IsRestored() bool {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
-	return w.isRestored
+	return isRestored(w.traits)
 }
 
 func (w *WalletBase) AccountDiscoveryRequired() bool {

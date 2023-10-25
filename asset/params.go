@@ -19,9 +19,6 @@ type OpenWalletParams struct {
 	DbDriver string
 	Logger   slog.Logger
 	ConfigDB WalletDataDB
-
-	// ID is temporary. Remove!
-	ID int
 }
 
 // CreateWalletParams are the parameters for creating a wallet.

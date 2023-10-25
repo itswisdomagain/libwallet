@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/decred/slog"
 	"github.com/itswisdomagain/libwallet/asset"
@@ -94,6 +95,38 @@ func (w *Wallet) CloseWallet() error {
 	w.mainWallet = nil
 	w.db = nil
 	return nil
+}
+
+// SetBirthday updates the wallet's birthday to the provided value. If the
+// newBday is before the current birthday, rescan will be performed. If the
+// wallet is currently synced or syncing, the wallet will be disconnected first
+func (w *Wallet) SetBirthday(newBday time.Time) error {
+	oldBday := w.Manager.Birthday()
+	if newBday.Equal(oldBday) {
+		return nil // nothing to update
+	}
+
+	rescanRequired := newBday.Before(oldBday)
+	if rescanRequired {
+		// Temporarily disable syncing until this birthday update completes.
+		restartSync := make(chan struct{})
+		w.temporarilyDisableSync(restartSync)
+		defer close(restartSync) // will trigger sync restart after this bday update completes.
+	}
+
+	// Update the birthday in the wallet database. If rescan is required, also
+	// mark the wallet as needing rescan. The rescan will be performed when the
+	// wallet synchronization starts or restarts.
+	return walletdb.Update(w.Database(), func(dbtx walletdb.ReadWriteTx) error {
+		ns := dbtx.ReadWriteBucket(waddrmgrNamespace)
+		if err := w.Manager.SetBirthday(ns, newBday); err != nil {
+			return err
+		}
+		if rescanRequired {
+			return w.Manager.SetSyncedTo(ns, nil) // never synced, forcing recover from birthday
+		}
+		return nil
+	})
 }
 
 // ChangePassphrase changes the wallet's private passphrase. If provided, the
