@@ -46,9 +46,10 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 	}
 
 	var seed []byte
-	isRestored := recovery != nil
-	if isRestored {
+	var walletTraits asset.WalletTrait
+	if recovery != nil {
 		seed = recovery.Seed
+		walletTraits = asset.WalletTraitRestored
 	} else {
 		seed, err = hdkeychain.GenerateSeed(hdkeychain.RecommendedSeedLen)
 		if err != nil {
@@ -56,9 +57,9 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 		}
 	}
 
-	wb, err := asset.NewWalletBase(params.OpenWalletParams, seed, params.Pass, isRestored)
+	wb, err := asset.NewWalletBase(params.OpenWalletParams, seed, params.Pass, walletTraits)
 	if err != nil {
-		return nil, fmt.Errorf("CreateWalletBase error: %v", err)
+		return nil, fmt.Errorf("NewWalletBase error: %v", err)
 	}
 
 	pubPass := []byte(wallet.InsecurePubPassphrase)
@@ -106,6 +107,59 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 		db:           db,
 		chainService: chainService,
 		chainClient:  chain.NewNeutrinoClient(chainParams, chainService),
+	}, nil
+}
+
+// CreateWatchOnlyWallet creates and opens a watchonly SPV wallet.
+func CreateWatchOnlyWallet(ctx context.Context, extendedPubKey string, params asset.CreateWalletParams) (*Wallet, error) {
+	chainParams, err := ParseChainParams(params.Net)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing chain: %w", err)
+	}
+
+	if exists, err := WalletExistsAt(params.DataDir); err != nil {
+		return nil, fmt.Errorf("error checking if wallet already exist: %w", err)
+	} else if exists {
+		return nil, fmt.Errorf("wallet at %q already exists", params.DataDir)
+	}
+
+	wb, err := asset.NewWalletBase(params.OpenWalletParams, nil, nil, asset.WalletTraitWatchOnly)
+	if err != nil {
+		return nil, fmt.Errorf("NewWalletBase error: %v", err)
+	}
+
+	loader := wallet.NewLoader(chainParams, params.DataDir, true, dbTimeout, 250)
+	pubPass := []byte(wallet.InsecurePubPassphrase)
+	btcw, err := loader.CreateNewWatchingOnlyWallet(pubPass, params.Birthday)
+	if err != nil {
+		return nil, err
+	}
+
+	bailOnWallet := true // changed to false if there are no errors below
+	defer func() {
+		if bailOnWallet {
+			if err := loader.UnloadWallet(); err != nil {
+				params.Logger.Errorf("Error unloading wallet after CreateWallet error:", err)
+			}
+		}
+	}()
+
+	// Create the chain service DB.
+	neutrinoDBPath := filepath.Join(params.DataDir, neutrinoDBName)
+	db, err := walletdb.Create(params.DbDriver, neutrinoDBPath, true, dbTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create neutrino db at %q: %w", neutrinoDBPath, err)
+	}
+
+	bailOnWallet = false
+	return &Wallet{
+		dir:        params.DataDir,
+		dbDriver:   params.DbDriver,
+		log:        params.Logger,
+		loader:     loader,
+		db:         db,
+		WalletBase: wb,
+		mainWallet: btcw,
 	}, nil
 }
 

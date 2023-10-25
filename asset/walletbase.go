@@ -15,8 +15,8 @@ type WalletBase struct {
 	network Network
 
 	mtx                      sync.Mutex
+	traits                   WalletTrait
 	encryptedSeed            []byte
-	isRestored               bool
 	accountDiscoveryRequired bool
 
 	*syncHelper
@@ -24,14 +24,28 @@ type WalletBase struct {
 
 // NewWalletBase initializes a WalletBase using the information provided. The
 // wallet's seed is encrypted and saved, along with other basic wallet info.
-func NewWalletBase(params OpenWalletParams, seed, walletPass []byte, isRestored bool) (*WalletBase, error) {
-	if len(seed) == 0 {
-		return nil, fmt.Errorf("seed is required")
+func NewWalletBase(params OpenWalletParams, seed, walletPass []byte, traits WalletTrait) (*WalletBase, error) {
+	isWatchOnly, isRestored := isWatchOnly(traits), isRestored(traits)
+	if isWatchOnly && isRestored {
+		return nil, fmt.Errorf("invalid wallet traits: restored wallet cannot be watch only")
 	}
 
-	encryptedSeed, err := EncryptData(seed, walletPass)
-	if err != nil {
-		return nil, fmt.Errorf("seed encryption error: %v", err)
+	hasSeedAndWalletPass := len(seed) > 0 || len(walletPass) > 0
+
+	switch {
+	case isWatchOnly && hasSeedAndWalletPass:
+		return nil, fmt.Errorf("invalid arguments for watch only wallet")
+	case !isWatchOnly && !hasSeedAndWalletPass:
+		return nil, fmt.Errorf("seed AND private passphrase are required")
+	}
+
+	var encryptedSeed []byte
+	var err error
+	if !isWatchOnly {
+		encryptedSeed, err = EncryptData(seed, walletPass)
+		if err != nil {
+			return nil, fmt.Errorf("seed encryption error: %v", err)
+		}
 	}
 
 	// Account discovery is only required for restored wallets.
@@ -43,8 +57,8 @@ func NewWalletBase(params OpenWalletParams, seed, walletPass []byte, isRestored 
 		log:                      params.Logger,
 		dataDir:                  params.DataDir,
 		network:                  params.Net,
+		traits:                   traits,
 		encryptedSeed:            encryptedSeed,
-		isRestored:               isRestored,
 		accountDiscoveryRequired: accountDiscoveryRequired,
 		syncHelper:               &syncHelper{log: params.Logger},
 	}, nil
@@ -149,10 +163,16 @@ func (w *WalletBase) VerifySeed(seedMnemonic string, passphrase []byte) (bool, e
 	return true, nil
 }
 
+func (w *WalletBase) IsWatchOnly() bool {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+	return isWatchOnly(w.traits)
+}
+
 func (w *WalletBase) IsRestored() bool {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
-	return w.isRestored
+	return isRestored(w.traits)
 }
 
 func (w *WalletBase) AccountDiscoveryRequired() bool {
