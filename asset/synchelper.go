@@ -6,6 +6,8 @@ import (
 
 type SyncHelper struct {
 	cancelSync context.CancelFunc
+	*SyncProgressReporter
+
 	// syncEndedCh is opened when sync is started and closed when sync is ended.
 	// Wait on this channel to know when sync has completely stopped.
 	syncEndedCh chan struct{}
@@ -14,11 +16,11 @@ type SyncHelper struct {
 // InitSyncHelper initializes a SyncHelper for managing a wallet synchronization
 // process. The returned ctx should be used by the caller to determine when the
 // sync process should be stopped.
-func InitSyncHelper(ctx context.Context) (context.Context, *SyncHelper) {
+func InitSyncHelper(ctx context.Context, syncProgressReporter *SyncProgressReporter) (context.Context, *SyncHelper) {
 	syncCtx, cancelSync := context.WithCancel(ctx)
 	return syncCtx, &SyncHelper{
-		cancelSync:  cancelSync,
-		syncEndedCh: make(chan struct{}),
+		cancelSync:           cancelSync,
+		SyncProgressReporter: syncProgressReporter,
 	}
 }
 
@@ -43,6 +45,9 @@ func (sh *SyncHelper) Shutdown() {
 // ShutdownComplete signals that the wallet synchronization has been completely
 // stopped.
 func (sh *SyncHelper) ShutdownComplete() {
+	if sh.SyncProgressReporter != nil {
+		sh.SyncProgressReporter.WaitForBacgkroundProcesses()
+	}
 	close(sh.syncEndedCh)
 }
 

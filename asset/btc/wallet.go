@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/btcsuite/btcwallet/wallet"
 	"github.com/btcsuite/btcwallet/walletdb"
 	_ "github.com/btcsuite/btcwallet/walletdb/bdb"
@@ -158,4 +159,46 @@ func (w *Wallet) ChangePassphrase(oldPass, newPass []byte, finalize func() error
 	}
 
 	return nil
+}
+
+// setSyncedTo manually sets the wallet as synced up to the specified block
+// height. This is done because btcwallet sometimes fails to update the synced
+// to block and when that happens, wallet transactions may not be found until
+// the wallet is rescanned. TODO: Verify this.
+//
+// NOTE: This update attempt will be ignored if the wallet is NOT already synced
+// or wallet rescan is in progress.
+func (w *Wallet) setSyncedTo(blockHeight int32) error {
+	isRescanning := false // TODO
+	if !w.ChainSynced() || isRescanning {
+		return nil
+	}
+
+	bs, err := w.getBlockStamp(blockHeight)
+	if err != nil {
+		return err
+	}
+
+	return walletdb.Update(w.Database(), func(dbtx walletdb.ReadWriteTx) error {
+		ns := dbtx.ReadWriteBucket(wAddrMgrBkt)
+		return w.Manager.SetSyncedTo(ns, bs)
+	})
+}
+
+func (w *Wallet) getBlockStamp(blockHeight int32) (*waddrmgr.BlockStamp, error) {
+	blockHash, err := w.GetBlockHash(int64(blockHeight))
+	if err != nil {
+		return nil, fmt.Errorf("GetBlockHash error: %w", err)
+	}
+
+	block, err := w.ChainClient().GetBlock(blockHash)
+	if err != nil {
+		return nil, fmt.Errorf("GetBlock error: %w", err)
+	}
+
+	return &waddrmgr.BlockStamp{
+		Hash:      block.BlockHash(),
+		Height:    blockHeight,
+		Timestamp: block.Header.Timestamp,
+	}, nil
 }

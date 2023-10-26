@@ -29,8 +29,7 @@ func (s *btcChainService) Peers() []asset.SPVPeer {
 // StartSync connects the wallet to the blockchain network via SPV and returns
 // immediately. The wallet stays connected in the background until the provided
 // ctx is canceled or either StopSync or CloseWallet is called.
-// TODO: Accept sync ntfn listeners.
-func (w *Wallet) StartSync(ctx context.Context, connectPeers []string, savedPeersFilePath string) error {
+func (w *Wallet) StartSync(ctx context.Context, reportProgress bool, connectPeers []string, savedPeersFilePath string) error {
 	w.syncMtx.Lock()
 	defer w.syncMtx.Unlock()
 	if w.syncer != nil && w.syncer.IsActive() {
@@ -55,9 +54,20 @@ func (w *Wallet) StartSync(ctx context.Context, connectPeers []string, savedPeer
 		return fmt.Errorf("couldn't create Neutrino ChainService: %w", err)
 	}
 
+	bestBlock, err := chainService.BestBlock()
+	if err != nil {
+		return fmt.Errorf("chainService.BestBlock error: %v", err)
+	}
+
 	chainClient := chain.NewNeutrinoClient(w.chainParams, chainService)
 	if err = chainClient.Start(); err != nil { // lazily starts connmgr
 		return fmt.Errorf("couldn't start Neutrino client: %v", err)
+	}
+
+	// Subscribe to chainclient notifications.
+	if err := chainClient.NotifyBlocks(); err != nil {
+		chainClient.Stop()
+		return fmt.Errorf("subscribing to notifications failed: %v", err)
 	}
 
 	// Chain client is started. Connect peers.
@@ -67,9 +77,20 @@ func (w *Wallet) StartSync(ctx context.Context, connectPeers []string, savedPeer
 	w.log.Info("Synchronizing wallet with network...")
 	w.SynchronizeRPC(chainClient)
 
-	// Sync is fully started now. Initialize syncCtx and syncHelper and start a
-	// goroutine to monitor when the syncCtx is canceled and then stop the sync.
-	ctx, w.syncer = asset.InitSyncHelper(ctx) // below this point, ctx=syncCtx.
+	var syncReporter *asset.SyncProgressReporter
+	if reportProgress {
+		syncReporter = asset.InitSyncProgressReporter(3*time.Second, w.log)
+		syncReporter.SyncStarted(bestBlock.Height, peerManager.BestPeerHeight())
+	}
+
+	// Sync is fully started now. Initialize syncCtx and syncHelper and start
+	// goroutine(s) to monitor sync progress and to stop the sync when the
+	// syncCtx is canceled.
+	ctx, w.syncer = asset.InitSyncHelper(ctx, syncReporter) // below this point, ctx=syncCtx.
+
+	// Goroutine to monitor sync progress.
+	go w.monitorSyncActivity(ctx, reportProgress)
+
 	go func() {
 		// Wait for the ctx to be canceled.
 		<-ctx.Done()

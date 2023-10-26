@@ -21,7 +21,7 @@ type spvSyncer struct {
 // immediately. The wallet stays connected in the background until the provided
 // ctx is canceled or either StopSync or CloseWallet is called.
 // TODO: Accept sync ntfn listeners.
-func (w *Wallet) StartSync(ctx context.Context, connectPeers ...string) error {
+func (w *Wallet) StartSync(ctx context.Context, reportProgress bool, connectPeers ...string) error {
 	w.syncMtx.Lock()
 	defer w.syncMtx.Unlock()
 	if w.syncer != nil && w.syncer.IsActive() {
@@ -36,7 +36,7 @@ func (w *Wallet) StartSync(ctx context.Context, connectPeers ...string) error {
 		syncer.SetPersistentPeers(connectPeers)
 	}
 
-	ctx, syncHelper := asset.InitSyncHelper(ctx) // below this point, ctx=syncCtx
+	ctx, syncHelper := asset.InitSyncHelper(ctx, nil) // below this point, ctx=syncCtx
 	w.syncer = &spvSyncer{syncer, syncHelper}
 	w.SetNetworkBackend(syncer)
 

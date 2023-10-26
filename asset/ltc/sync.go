@@ -31,7 +31,7 @@ func (s *ltcChainService) Peers() []asset.SPVPeer {
 // immediately. The wallet stays connected in the background until the provided
 // ctx is canceled or either StopSync or CloseWallet is called.
 // TODO: Accept sync ntfn listeners.
-func (w *Wallet) StartSync(ctx context.Context, connectPeers []string, savedPeersFilePath string) error {
+func (w *Wallet) StartSync(ctx context.Context, reportProgress bool, connectPeers []string, savedPeersFilePath string) error {
 	w.syncMtx.Lock()
 	defer w.syncMtx.Unlock()
 	if w.syncer != nil && w.syncer.IsActive() {
@@ -70,7 +70,7 @@ func (w *Wallet) StartSync(ctx context.Context, connectPeers []string, savedPeer
 
 	// Sync is fully started now. Initialize syncCtx and syncHelper and start a
 	// goroutine to monitor when the syncCtx is canceled and then stop the sync.
-	ctx, w.syncer = asset.InitSyncHelper(ctx) // below this point, ctx=syncCtx.
+	ctx, w.syncer = asset.InitSyncHelper(ctx, nil) // below this point, ctx=syncCtx.
 	go func() {
 		// Wait for the ctx (syncCtx) to be canceled.
 		<-ctx.Done()

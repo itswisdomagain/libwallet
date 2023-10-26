@@ -305,3 +305,13 @@ func (s *SPVPeerManager) ConnectToInitialWalletPeers() {
 		}
 	}
 }
+
+func (s *SPVPeerManager) BestPeerHeight() (bestHeight int32) {
+	peers := s.cs.Peers()
+	for _, peer := range peers {
+		if peerHeight := peer.LastBlock(); peerHeight > bestHeight {
+			bestHeight = peerHeight
+		}
+	}
+	return bestHeight
+}
