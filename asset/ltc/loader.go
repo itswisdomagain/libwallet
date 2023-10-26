@@ -58,7 +58,7 @@ func CreateWallet[Tx any](ctx context.Context, params asset.CreateWalletParams[T
 		}
 	}
 
-	wb, err := asset.NewWalletBase(params.OpenWalletParams, seed, params.Pass, walletTraits)
+	wb, err := asset.NewWalletBase[Tx](params.OpenWalletParams, seed, params.Pass, walletTraits)
 	if err != nil {
 		return nil, fmt.Errorf("CreateWalletBase error: %v", err)
 	}
@@ -125,7 +125,7 @@ func CreateWatchOnlyWallet[Tx any](ctx context.Context, extendedPubKey string, p
 		return nil, fmt.Errorf("wallet at %q already exists", params.DataDir)
 	}
 
-	wb, err := asset.NewWalletBase(params.OpenWalletParams, nil, nil, asset.WalletTraitWatchOnly)
+	wb, err := asset.NewWalletBase[Tx](params.OpenWalletParams, nil, nil, asset.WalletTraitWatchOnly)
 	if err != nil {
 		return nil, fmt.Errorf("NewWalletBase error: %v", err)
 	}
@@ -189,7 +189,7 @@ func LoadWallet[Tx any](ctx context.Context, params asset.OpenWalletParams[Tx]) 
 		return nil, fmt.Errorf("wallet at %q doesn't exist", params.DataDir)
 	}
 
-	wb, err := asset.OpenWalletBase(params)
+	wb, err := asset.OpenWalletBase[Tx](params)
 	if err != nil {
 		return nil, fmt.Errorf("OpenWalletBase error: %v", err)
 	}

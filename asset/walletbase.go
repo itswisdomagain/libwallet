@@ -7,6 +7,7 @@ import (
 
 	"decred.org/dcrwallet/v3/walletseed"
 	"github.com/decred/slog"
+	"github.com/itswisdomagain/libwallet/syncutils"
 	"github.com/itswisdomagain/libwallet/walletdata"
 )
 
@@ -17,31 +18,36 @@ const (
 )
 
 type WalletBase[Tx any] struct {
-	// UserConfigDB is publicly embedded, so consumers can directly read from or
-	// write to the user config db.
+	// UserConfigDB is embedded so consumers can user config read/write methods
+	// directly.
 	walletdata.UserConfigDB
 	// TxIndexDB is embedded so consumers can call tx indexing methods directly.
 	// TxIndexDB may be nil and calling tx indexing methods when this field is
-	// nil may panic.
+	// nil will panic.
 	walletdata.TxIndexDB[Tx]
 
 	// db is private, for internal use only.
-	db      walletdata.WalletConfigDB
-	log     slog.Logger
-	dataDir string
-	network Network
+	db          walletdata.WalletConfigDB
+	log         slog.Logger
+	dataDir     string
+	network     Network
+	transformTx func(blockHeight int32, tx any, network Network) (*Tx, error)
 
 	mtx                      sync.Mutex
 	traits                   WalletTrait
 	encryptedSeed            []byte
 	accountDiscoveryRequired bool
 
-	*syncHelper
+	*syncutils.SyncHelper[Tx]
 }
 
 // NewWalletBase initializes a WalletBase using the information provided. The
 // wallet's seed is encrypted and saved, along with other basic wallet info.
 func NewWalletBase[Tx any](params OpenWalletParams[Tx], seed, walletPass []byte, traits WalletTrait) (*WalletBase[Tx], error) {
+	if params.TxIndexDB != nil && params.TransformTx == nil {
+		return nil, fmt.Errorf("incomplete tx indexing configuration")
+	}
+
 	isWatchOnly, isRestored := isWatchOnly(traits), isRestored(traits)
 	if isWatchOnly && isRestored {
 		return nil, fmt.Errorf("invalid wallet traits: restored wallet cannot be watch only")
@@ -58,7 +64,7 @@ func NewWalletBase[Tx any](params OpenWalletParams[Tx], seed, walletPass []byte,
 
 	var encryptedSeed []byte
 	var err error
-	if !isWatchOnly {
+	if !isWatchOnly { // TODO: Restored wallet does not need seed backup.
 		encryptedSeed, err = EncryptData(seed, walletPass)
 		if err != nil {
 			return nil, fmt.Errorf("seed encryption error: %v", err)
@@ -89,16 +95,21 @@ func NewWalletBase[Tx any](params OpenWalletParams[Tx], seed, walletPass []byte,
 		log:                      params.Logger,
 		dataDir:                  params.DataDir,
 		network:                  params.Net,
+		transformTx:              params.TransformTx,
 		traits:                   traits,
 		encryptedSeed:            encryptedSeed,
 		accountDiscoveryRequired: accountDiscoveryRequired,
-		syncHelper:               &syncHelper{log: params.Logger},
+		SyncHelper:               syncutils.NewSyncHelper[Tx](params.Logger),
 	}, nil
 }
 
 // OpenWalletBase loads basic information for an existing wallet from the
 // provided params.
 func OpenWalletBase[Tx any](params OpenWalletParams[Tx]) (*WalletBase[Tx], error) {
+	if params.TxIndexDB != nil && params.TransformTx == nil {
+		return nil, fmt.Errorf("incomplete tx indexing configuration")
+	}
+
 	w := &WalletBase[Tx]{
 		UserConfigDB: params.UserConfigDB,
 		TxIndexDB:    params.TxIndexDB,
@@ -106,7 +117,8 @@ func OpenWalletBase[Tx any](params OpenWalletParams[Tx]) (*WalletBase[Tx], error
 		log:          params.Logger,
 		dataDir:      params.DataDir,
 		network:      params.Net,
-		syncHelper:   &syncHelper{log: params.Logger},
+		transformTx:  params.TransformTx,
+		SyncHelper:   syncutils.NewSyncHelper[Tx](params.Logger),
 	}
 
 	readFromDB := func(key string, wFieldPtr any) error {
@@ -255,4 +267,15 @@ func (w *WalletBase[_]) ReadUserConfigBoolValue(key string, defaultValue ...bool
 // value from the wallet's config db.
 func (w *WalletBase[_]) ReadUserConfigStringValue(key string, defaultValue ...string) string {
 	return walletdata.ReadUserConfigValue(w, key, defaultValue...)
+}
+
+func (w *WalletBase[Tx]) CanTransformTx() bool {
+	return w.transformTx != nil
+}
+
+func (w *WalletBase[Tx]) TransformTx(blockHeight int32, tx any) (*Tx, error) {
+	if !w.CanTransformTx() {
+		return nil, fmt.Errorf("tx parsing engine not setup")
+	}
+	return w.transformTx(blockHeight, tx, w.network)
 }

@@ -10,6 +10,15 @@ import (
 	"github.com/decred/dcrd/addrmgr/v2"
 )
 
+// ConnectedPeersCount returns the number of peers this wallet is currently
+// connected to.
+func (w *Wallet[Tx]) ConnectedPeersCount() int {
+	if w.syncer == nil {
+		return 0
+	}
+	return len(w.syncer.GetRemotePeers())
+}
+
 // StartSync connects the wallet to the blockchain network via SPV and returns
 // immediately. The wallet stays connected in the background until the provided
 // ctx is canceled or either StopSync or CloseWallet is called.
@@ -44,7 +53,7 @@ func (w *Wallet[_]) StartSync(ctx context.Context, connectPeers ...string) error
 				// sync ctx canceled, quit syncing
 				w.syncer = nil
 				w.SetNetworkBackend(nil)
-				w.SyncEnded(nil)
+				w.SyncHasStopped(nil)
 				return
 			}
 
@@ -61,12 +70,10 @@ func (w *Wallet[_]) StartSync(ctx context.Context, connectPeers ...string) error
 }
 
 // IsSyncing returns true if the wallet is catching up to the mainchain's best
-// block.
+// block. Returns false if the wallet is synced up to the best block on the main
+// chain.
 func (w *Wallet[_]) IsSyncing() bool {
-	if w.IsSynced() {
-		return false
-	}
-	return w.IsSyncingOrSynced()
+	return w.IsConnectedToNetwork() && !w.IsSynced()
 }
 
 // IsSynced returns true if the wallet has synced up to the best block on the
