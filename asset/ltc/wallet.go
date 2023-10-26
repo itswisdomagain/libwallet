@@ -1,15 +1,13 @@
 package ltc
 
 import (
-	"errors"
 	"fmt"
-	"path/filepath"
-	"sync"
 	"time"
 
+	neutrino "github.com/dcrlabs/neutrino-ltc"
+	"github.com/dcrlabs/neutrino-ltc/chain"
 	"github.com/decred/slog"
 	"github.com/itswisdomagain/libwallet/asset"
-	"github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcwallet/wallet"
 	"github.com/ltcsuite/ltcwallet/walletdb"
 	_ "github.com/ltcsuite/ltcwallet/walletdb/bdb"
@@ -20,18 +18,16 @@ var waddrmgrNamespace = []byte("waddrmgr")
 type mainWallet = wallet.Wallet
 
 type Wallet struct {
-	dir         string
-	dbDriver    string
-	chainParams *chaincfg.Params
-	log         slog.Logger
-
-	loader *wallet.Loader
-	db     walletdb.DB
 	*asset.WalletBase
 	*mainWallet
 
-	syncMtx sync.Mutex
-	syncer  *asset.SyncHelper
+	dir          string
+	dbDriver     string
+	log          slog.Logger
+	loader       *wallet.Loader
+	db           walletdb.DB
+	chainService *neutrino.ChainService
+	chainClient  *chain.NeutrinoClient
 }
 
 // OpenWallet opens the wallet database and the wallet.
@@ -40,33 +36,12 @@ func (w *Wallet) OpenWallet() error {
 		return fmt.Errorf("wallet is already open")
 	}
 
-	// timeout and recoverWindow arguments borrowed from btcwallet directly.
-	w.loader = wallet.NewLoader(w.chainParams, w.dir, true, dbTimeout, 250)
-
-	exists, err := w.loader.WalletExists()
-	if err != nil {
-		return fmt.Errorf("error verifying wallet existence: %v", err)
-	}
-	if !exists {
-		return errors.New("wallet not found")
-	}
-
 	w.log.Debug("Opening LTC wallet...")
 	ltcw, err := w.loader.OpenExistingWallet([]byte(wallet.InsecurePubPassphrase), false)
 	if err != nil {
 		return fmt.Errorf("couldn't load wallet: %w", err)
 	}
 
-	neutrinoDBPath := filepath.Join(w.dir, neutrinoDBName)
-	db, err := walletdb.Open(w.dbDriver, neutrinoDBPath, true, dbTimeout) // TODO: DEX uses Create!
-	if err != nil {
-		if unloadErr := w.loader.UnloadWallet(); unloadErr != nil {
-			w.log.Errorf("Error unloading wallet after OpenWallet error:", unloadErr)
-		}
-		return fmt.Errorf("unable to open wallet db at %q: %v", neutrinoDBPath, err)
-	}
-
-	w.db = db
 	w.mainWallet = ltcw
 	return nil
 }
@@ -79,21 +54,64 @@ func (w *Wallet) WalletOpened() bool {
 // CloseWallet stops any active network syncrhonization, unloads the wallet and
 // closes the neutrino chain db.
 func (w *Wallet) CloseWallet() error {
-	if err := w.StopSync(); err != nil {
-		return fmt.Errorf("StopSync error: %w", err)
-	}
+	w.StopSync()
+	w.WaitForSyncToStop()
 
+	w.log.Info("Unloading wallet")
 	if err := w.loader.UnloadWallet(); err != nil {
 		return err
 	}
+	w.mainWallet = nil
 
+	w.log.Trace("Stopping neutrino chain client")
+	w.chainClient.Stop()
+	w.chainClient.WaitForShutdown()
+	w.chainClient = nil
+
+	w.log.Trace("Stopping neutrino chain service")
+	if err := w.chainService.Stop(); err != nil {
+		w.log.Errorf("error stopping neutrino chain service: %v", err)
+	}
+	w.chainService = nil
+
+	w.log.Trace("Stopping neutrino DB.")
 	if err := w.db.Close(); err != nil {
 		return err
 	}
+	w.db = nil
 
 	w.log.Debug("LTC wallet closed")
-	w.mainWallet = nil
-	w.db = nil
+	return nil
+}
+
+// ChangePassphrase changes the wallet's private passphrase. If provided, the
+// finalize function would be called after the passphrase change is complete. If
+// that function returns an error, the passphrase change will be reverted.
+func (w *Wallet) ChangePassphrase(oldPass, newPass []byte, finalize func() error) (err error) {
+	err = w.ChangePrivatePassphrase(oldPass, newPass)
+	if err != nil {
+		return err
+	}
+
+	revertPassphraseChange := func() {
+		if err = w.ChangePrivatePassphrase(newPass, oldPass); err != nil {
+			w.log.Errorf("failed to undo wallet passphrase change: %w", err)
+		}
+	}
+
+	if err = w.ReEncryptSeed(oldPass, newPass); err != nil {
+		revertPassphraseChange()
+		return fmt.Errorf("error re-encrypting wallet seed: %v", err)
+	}
+
+	if finalize != nil {
+		if err = finalize(); err != nil {
+			revertPassphraseChange()
+			w.log.Errorf("error finalizing passphrase change: %v", err)
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -127,35 +145,4 @@ func (w *Wallet) SetBirthday(newBday time.Time) error {
 		}
 		return nil
 	})
-}
-
-// ChangePassphrase changes the wallet's private passphrase. If provided, the
-// finalize function would be called after the passphrase change is complete. If
-// that function returns an error, the passphrase change will be reverted.
-func (w *Wallet) ChangePassphrase(oldPass, newPass []byte, finalize func() error) (err error) {
-	err = w.ChangePrivatePassphrase(oldPass, newPass)
-	if err != nil {
-		return err
-	}
-
-	revertPassphraseChange := func() {
-		if err = w.ChangePrivatePassphrase(newPass, oldPass); err != nil {
-			w.log.Errorf("failed to undo wallet passphrase change: %w", err)
-		}
-	}
-
-	if err = w.ReEncryptSeed(oldPass, newPass); err != nil {
-		revertPassphraseChange()
-		return fmt.Errorf("error re-encrypting wallet seed: %v", err)
-	}
-
-	if finalize != nil {
-		if err = finalize(); err != nil {
-			revertPassphraseChange()
-			w.log.Errorf("error finalizing passphrase change: %v", err)
-			return err
-		}
-	}
-
-	return nil
 }

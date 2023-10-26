@@ -7,10 +7,13 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcwallet/chain"
 	"github.com/btcsuite/btcwallet/wallet"
 	"github.com/btcsuite/btcwallet/walletdb"
 	_ "github.com/btcsuite/btcwallet/walletdb/bdb"
 	"github.com/itswisdomagain/libwallet/asset"
+	"github.com/lightninglabs/neutrino"
 )
 
 const (
@@ -35,7 +38,8 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 		return nil, fmt.Errorf("error parsing chain: %w", err)
 	}
 
-	if exists, err := WalletExistsAt(params.DataDir); err != nil {
+	loader := wallet.NewLoader(chainParams, params.DataDir, true, dbTimeout, 250)
+	if exists, err := loader.WalletExists(); err != nil {
 		return nil, fmt.Errorf("error checking if wallet already exist: %w", err)
 	} else if exists {
 		return nil, fmt.Errorf("wallet at %q already exists", params.DataDir)
@@ -58,7 +62,6 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 		return nil, fmt.Errorf("CreateWalletBase error: %v", err)
 	}
 
-	loader := wallet.NewLoader(chainParams, params.DataDir, true, dbTimeout, 250)
 	pubPass := []byte(wallet.InsecurePubPassphrase)
 	btcw, err := loader.CreateNewWallet(pubPass, params.Pass, seed, params.Birthday)
 	if err != nil {
@@ -88,16 +91,22 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 		return nil, fmt.Errorf("unable to create neutrino db at %q: %w", neutrinoDBPath, err)
 	}
 
+	chainService, err := initializeChainService(params.DataDir, db, *chainParams)
+	if err != nil {
+		return nil, fmt.Errorf("unable to initialize neutrino ChainService: %w", err)
+	}
+
 	bailOnWallet = false
 	return &Wallet{
-		dir:         params.DataDir,
-		dbDriver:    params.DbDriver,
-		chainParams: chainParams,
-		log:         params.Logger,
-		loader:      loader,
-		db:          db,
-		WalletBase:  wb,
-		mainWallet:  btcw,
+		WalletBase:   wb,
+		mainWallet:   btcw,
+		dir:          params.DataDir,
+		dbDriver:     params.DbDriver,
+		log:          params.Logger,
+		loader:       loader,
+		db:           db,
+		chainService: chainService,
+		chainClient:  chain.NewNeutrinoClient(chainParams, chainService),
 	}, nil
 }
 
@@ -142,31 +151,38 @@ func CreateWatchOnlyWallet(ctx context.Context, extendedPubKey string, params as
 		return nil, fmt.Errorf("unable to create neutrino db at %q: %w", neutrinoDBPath, err)
 	}
 
+	chainService, err := initializeChainService(params.DataDir, db, *chainParams)
+	if err != nil {
+		return nil, fmt.Errorf("unable to initialize neutrino ChainService: %w", err)
+	}
+
 	bailOnWallet = false
 	return &Wallet{
-		dir:         params.DataDir,
-		dbDriver:    params.DbDriver,
-		chainParams: chainParams,
-		log:         params.Logger,
-		loader:      loader,
-		db:          db,
-		WalletBase:  wb,
-		mainWallet:  btcw,
+		WalletBase:   wb,
+		mainWallet:   btcw,
+		dir:          params.DataDir,
+		dbDriver:     params.DbDriver,
+		log:          params.Logger,
+		loader:       loader,
+		db:           db,
+		chainService: chainService,
+		chainClient:  chain.NewNeutrinoClient(chainParams, chainService),
 	}, nil
 }
 
 // LoadWallet loads a previously created native SPV wallet. The wallet must be
 // opened via its OpenWallet method before it can be used.
 func LoadWallet(ctx context.Context, params asset.OpenWalletParams) (*Wallet, error) {
-	if exists, err := WalletExistsAt(params.DataDir); err != nil {
-		return nil, err
-	} else if !exists {
-		return nil, fmt.Errorf("wallet at %q doesn't exist", params.DataDir)
-	}
-
 	chainParams, err := ParseChainParams(params.Net)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing chain params: %w", err)
+	}
+
+	loader := wallet.NewLoader(chainParams, params.DataDir, true, dbTimeout, 250)
+	if exists, err := loader.WalletExists(); err != nil {
+		return nil, err
+	} else if !exists {
+		return nil, fmt.Errorf("wallet at %q doesn't exist", params.DataDir)
 	}
 
 	wb, err := asset.OpenWalletBase(params)
@@ -174,11 +190,42 @@ func LoadWallet(ctx context.Context, params asset.OpenWalletParams) (*Wallet, er
 		return nil, fmt.Errorf("OpenWalletBase error: %v", err)
 	}
 
+	// Open the chain service DB.
+	neutrinoDBPath := filepath.Join(params.DataDir, neutrinoDBName)
+	db, err := walletdb.Open(params.DbDriver, neutrinoDBPath, true, dbTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("unable to open neutrino db at %q: %w", neutrinoDBPath, err)
+	}
+
+	chainService, err := initializeChainService(params.DataDir, db, *chainParams)
+	if err != nil {
+		return nil, fmt.Errorf("unable to initialize neutrino ChainService: %w", err)
+	}
+
 	return &Wallet{
-		dir:         params.DataDir,
-		dbDriver:    params.DbDriver,
-		chainParams: chainParams,
-		log:         params.Logger,
-		WalletBase:  wb,
+		WalletBase:   wb,
+		dir:          params.DataDir,
+		dbDriver:     params.DbDriver,
+		log:          params.Logger,
+		loader:       loader,
+		db:           db,
+		chainService: chainService,
+		chainClient:  chain.NewNeutrinoClient(chainParams, chainService),
 	}, nil
+}
+
+func initializeChainService(dataDir string, db walletdb.DB, chainParams chaincfg.Params) (*neutrino.ChainService, error) {
+	return neutrino.NewChainService(neutrino.Config{
+		DataDir:       dataDir,
+		Database:      db,
+		ChainParams:   chainParams,
+		PersistToDisk: true, // keep cfilter headers on disk for efficient rescanning
+		// AddPeers:      addPeers,
+		// ConnectPeers:  connectPeers,
+		// WARNING: PublishTransaction currently uses the entire duration
+		// because if an external bug, but even if the resolved, a typical
+		// inv/getdata round trip is ~4 seconds, so we set this so neutrino does
+		// not cancel queries too readily.
+		BroadcastTimeout: 6 * time.Second,
+	})
 }

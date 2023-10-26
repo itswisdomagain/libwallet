@@ -32,6 +32,9 @@ type WalletBase struct {
 	encryptedSeed            []byte
 	traits                   WalletTrait
 	accountDiscoveryRequired bool
+
+	*syncHelper
+	*SyncProgressReporter
 }
 
 // CreateWalletBase initializes a WalletBase using the information provided. The
@@ -84,7 +87,9 @@ func CreateWalletBase(params OpenWalletParams, seed, walletPass []byte, traits W
 		dataDir:                  params.DataDir,
 		network:                  params.Net,
 		encryptedSeed:            encryptedSeed,
+		traits:                   traits,
 		accountDiscoveryRequired: accountDiscoveryRequired,
+		syncHelper:               &syncHelper{log: params.Logger},
 	}, nil
 }
 
@@ -97,6 +102,7 @@ func OpenWalletBase(params OpenWalletParams) (*WalletBase, error) {
 		log:          params.Logger,
 		dataDir:      params.DataDir,
 		network:      params.Net,
+		syncHelper:   &syncHelper{log: params.Logger},
 	}
 
 	readFromDB := func(key string, wFieldPtr any, optional ...bool) error {

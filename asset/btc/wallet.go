@@ -1,19 +1,17 @@
 package btc
 
 import (
-	"errors"
 	"fmt"
-	"path/filepath"
-	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcwallet/chain"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/btcsuite/btcwallet/wallet"
 	"github.com/btcsuite/btcwallet/walletdb"
 	_ "github.com/btcsuite/btcwallet/walletdb/bdb"
 	"github.com/decred/slog"
 	"github.com/itswisdomagain/libwallet/asset"
+	"github.com/lightninglabs/neutrino"
 )
 
 var wAddrMgrBkt = []byte("waddrmgr")
@@ -21,18 +19,16 @@ var wAddrMgrBkt = []byte("waddrmgr")
 type mainWallet = wallet.Wallet
 
 type Wallet struct {
-	dir         string
-	dbDriver    string
-	chainParams *chaincfg.Params
-	log         slog.Logger
-
-	loader *wallet.Loader
-	db     walletdb.DB
 	*asset.WalletBase
 	*mainWallet
 
-	syncMtx sync.Mutex
-	syncer  *asset.SyncHelper
+	dir          string
+	dbDriver     string
+	log          slog.Logger
+	loader       *wallet.Loader
+	db           walletdb.DB
+	chainService *neutrino.ChainService
+	chainClient  *chain.NeutrinoClient
 }
 
 // OpenWallet opens the wallet database and the wallet.
@@ -41,33 +37,12 @@ func (w *Wallet) OpenWallet() error {
 		return fmt.Errorf("wallet is already open")
 	}
 
-	// timeout and recoverWindow arguments borrowed from btcwallet directly.
-	w.loader = wallet.NewLoader(w.chainParams, w.dir, true, dbTimeout, 250)
-
-	exists, err := w.loader.WalletExists()
-	if err != nil {
-		return fmt.Errorf("error verifying wallet existence: %v", err)
-	}
-	if !exists {
-		return errors.New("wallet not found")
-	}
-
 	w.log.Debug("Opening BTC wallet...")
 	btcw, err := w.loader.OpenExistingWallet([]byte(wallet.InsecurePubPassphrase), false)
 	if err != nil {
-		return fmt.Errorf("couldn't load wallet: %w", err)
+		return fmt.Errorf("OpenExistingWallet error: %w", err)
 	}
 
-	neutrinoDBPath := filepath.Join(w.dir, neutrinoDBName)
-	db, err := walletdb.Open(w.dbDriver, neutrinoDBPath, true, dbTimeout) // TODO: DEX uses Create!
-	if err != nil {
-		if unloadErr := w.loader.UnloadWallet(); unloadErr != nil {
-			w.log.Errorf("Error unloading wallet after OpenWallet error:", unloadErr)
-		}
-		return fmt.Errorf("unable to open wallet db at %q: %v", neutrinoDBPath, err)
-	}
-
-	w.db = db
 	w.mainWallet = btcw
 	return nil
 }
@@ -80,21 +55,33 @@ func (w *Wallet) WalletOpened() bool {
 // CloseWallet stops any active network syncrhonization, unloads the wallet and
 // closes the neutrino chain db.
 func (w *Wallet) CloseWallet() error {
-	if err := w.StopSync(); err != nil {
-		return fmt.Errorf("StopSync error: %w", err)
-	}
+	w.StopSync()
+	w.WaitForSyncToStop()
 
+	w.log.Info("Unloading wallet")
 	if err := w.loader.UnloadWallet(); err != nil {
 		return err
 	}
+	w.mainWallet = nil
 
+	w.log.Trace("Stopping neutrino chain client")
+	w.chainClient.Stop()
+	w.chainClient.WaitForShutdown()
+	w.chainClient = nil
+
+	w.log.Trace("Stopping neutrino chain service")
+	if err := w.chainService.Stop(); err != nil {
+		w.log.Errorf("error stopping neutrino chain service: %v", err)
+	}
+	w.chainService = nil
+
+	w.log.Trace("Stopping neutrino DB.")
 	if err := w.db.Close(); err != nil {
 		return err
 	}
-
-	w.log.Debug("BTC wallet closed")
-	w.mainWallet = nil
 	w.db = nil
+
+	w.log.Info("BTC wallet closed")
 	return nil
 }
 

@@ -2,56 +2,104 @@ package asset
 
 import (
 	"context"
+	"fmt"
+	"sync"
+
+	"github.com/decred/slog"
 )
 
-type SyncHelper struct {
-	cancelSync context.CancelFunc
-	*SyncProgressReporter
+type syncHelper struct {
+	log slog.Logger
 
+	mtx        sync.Mutex
+	cancelSync context.CancelFunc
 	// syncEndedCh is opened when sync is started and closed when sync is ended.
 	// Wait on this channel to know when sync has completely stopped.
-	syncEndedCh chan struct{}
+	syncEndedCh     chan struct{}
+	cancelRequested bool
 }
 
-// InitSyncHelper initializes a SyncHelper for managing a wallet synchronization
-// process. The returned ctx should be used by the caller to determine when the
-// sync process should be stopped.
-func InitSyncHelper(ctx context.Context, syncProgressReporter *SyncProgressReporter) (context.Context, *SyncHelper) {
-	syncCtx, cancelSync := context.WithCancel(ctx)
-	return syncCtx, &SyncHelper{
-		cancelSync:           cancelSync,
-		SyncProgressReporter: syncProgressReporter,
+// InitializeSyncContext returns a context that should be used for bacgkround
+// sync processes. All sync background processes should exit when the returned
+// context is canceled. Call SyncEnded() when all sync processes have ended.
+func (sh *syncHelper) InitializeSyncContext(ctx context.Context) (context.Context, error) {
+	sh.mtx.Lock()
+	defer sh.mtx.Unlock()
+
+	if sh.cancelSync != nil {
+		return nil, fmt.Errorf("already syncing")
 	}
+
+	syncCtx, cancel := context.WithCancel(ctx)
+	sh.cancelSync = cancel
+	sh.syncEndedCh = make(chan struct{})
+	sh.cancelRequested = false
+	return syncCtx, nil
 }
 
-// IsActive is true unless the ShutdownComplete() was called on this helper to
-// signal that the sync process(es) have all stopped.
-func (sh *SyncHelper) IsActive() bool {
-	select {
-	case <-sh.syncEndedCh:
-		return true
-	default:
-		return false
+// IsSyncing is true if the wallet is synchronizing with the blockchain network.
+func (sh *syncHelper) IsSyncing() bool {
+	sh.mtx.Lock()
+	defer sh.mtx.Unlock()
+	return sh.cancelSync != nil
+}
+
+// SyncEnded signals that all sync processes have been stopped.
+func (sh *syncHelper) SyncEnded(err error) {
+	sh.mtx.Lock()
+	defer sh.mtx.Unlock()
+
+	if sh.cancelSync == nil {
+		return // sync wasn't active
 	}
+
+	close(sh.syncEndedCh)
+	sh.cancelSync = nil
+	sh.syncEndedCh = nil
+	sh.cancelRequested = false
+	sh.log.Infof("sync canceled")
 }
 
-// Shutdown cancels the syncCtx and begins the process of stopping the network
-// synchronization. When all sub-processes have ended, call ShutdownComplete()
-// to signal that sync has fully stopped.
-func (sh *SyncHelper) Shutdown() {
+// StopSync cancels the wallet's synchronization to the blockchain network. It
+// may take a few moments for sync to completely stop. Use
+func (sh *syncHelper) StopSync() {
+	sh.mtx.Lock()
+	defer sh.mtx.Unlock()
+
+	if sh.cancelRequested || sh.cancelSync == nil {
+		sh.log.Infof("sync is already canceling or not running")
+		return
+	}
+
+	sh.log.Infof("canceling sync... this may take a moment")
+	sh.cancelRequested = true
 	sh.cancelSync()
 }
 
-// ShutdownComplete signals that the wallet synchronization has been completely
-// stopped.
-func (sh *SyncHelper) ShutdownComplete() {
-	if sh.SyncProgressReporter != nil {
-		sh.SyncProgressReporter.WaitForBacgkroundProcesses()
-	}
-	close(sh.syncEndedCh)
+func (sh *syncHelper) SyncIsStopping() bool {
+	sh.mtx.Lock()
+	defer sh.mtx.Unlock()
+	return sh.cancelRequested
 }
 
-// WaitForShutdown blocks until the wallet synchronization is fully stopped.
-func (sh *SyncHelper) WaitForShutdown() {
-	<-sh.syncEndedCh
+// WaitForSyncToStop blocks until the wallet synchronization is fully stopped.
+func (sh *syncHelper) WaitForSyncToStop() {
+	sh.mtx.Lock()
+	waitCh := sh.syncEndedCh
+	sh.mtx.Unlock()
+
+	if waitCh != nil {
+		<-waitCh
+	}
+}
+
+// BlockSync disables access to sync functionality until UnblockSync is called.
+func (sh *syncHelper) BlockSync() {
+	sh.mtx.Lock()
+}
+
+// UnblockSync re-enables access to sync functionality after a previous call to
+// BlockSync.
+func (sh *syncHelper) UnblockSync() {
+	sh.mtx.Unlock()
 }

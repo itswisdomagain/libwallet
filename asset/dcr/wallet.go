@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"sync"
 
 	"decred.org/dcrwallet/v3/errors"
 	"decred.org/dcrwallet/v3/wallet"
@@ -25,8 +24,8 @@ type Wallet struct {
 	*asset.WalletBase
 	*mainWallet
 
-	syncMtx sync.Mutex
-	syncer  *spvSyncer
+	// syncMtx sync.Mutex
+	// syncer  *spv.Syncer
 }
 
 // OpenWallet opens the wallet database and the wallet.
@@ -72,10 +71,10 @@ func (w *Wallet) MainWallet() *wallet.Wallet {
 // CloseWallet stops any active network syncrhonization and closes the wallet
 // database.
 func (w *Wallet) CloseWallet() error {
-	if err := w.StopSync(); err != nil {
-		return fmt.Errorf("StopSync error: %w", err)
-	}
+	w.StopSync()
+	w.WaitForSyncToStop()
 
+	w.log.Info("Closing wallet")
 	if err := w.db.Close(); err != nil {
 		return fmt.Errorf("Close wallet db error: %w", err)
 	}
