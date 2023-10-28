@@ -4,14 +4,17 @@ import (
 	"time"
 
 	"github.com/decred/slog"
+	"github.com/itswisdomagain/libwallet/walletdata"
 )
 
 // CreateWalletParams are the parameters for opening a wallet.
 type OpenWalletParams struct {
-	Net      Network
-	DataDir  string
-	DbDriver string
-	Logger   slog.Logger
+	Net            Network
+	DataDir        string
+	DbDriver       string
+	Logger         slog.Logger
+	UserConfigDB   walletdata.UserConfigDB
+	WalletConfigDB walletdata.WalletConfigDB
 }
 
 // CreateWalletParams are the parameters for creating a wallet.
