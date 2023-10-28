@@ -3,6 +3,7 @@ module github.com/itswisdomagain/libwallet
 require (
 	decred.org/dcrwallet/v3 v3.0.1
 	github.com/btcsuite/btcd v0.23.4
+	github.com/btcsuite/btcd/btcutil v1.1.3
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/btcsuite/btcwallet v0.16.10-0.20230706223227-037580c66b74
 	github.com/btcsuite/btcwallet/walletdb v1.4.0
@@ -11,13 +12,17 @@ require (
 	github.com/decred/dcrd/addrmgr/v2 v2.0.2
 	github.com/decred/dcrd/chaincfg/v3 v3.2.0
 	github.com/decred/dcrd/connmgr/v3 v3.1.1
+	github.com/decred/dcrd/hdkeychain/v3 v3.1.1
 	github.com/decred/slog v1.2.0
 	github.com/jrick/logrotate v1.0.0
+	github.com/kevinburke/nacl v0.0.0-20210405173606-cd9060f5f776
 	github.com/lightninglabs/neutrino v0.15.0
 	github.com/ltcsuite/ltcd v0.22.1-beta.0.20230329025258-1ea035d2e665
+	github.com/ltcsuite/ltcd/ltcutil v1.1.0
 	github.com/ltcsuite/ltcwallet v0.13.1
 	github.com/ltcsuite/ltcwallet/walletdb v1.3.5
 	github.com/ltcsuite/ltcwallet/wtxmgr v1.5.0
+	golang.org/x/crypto v0.7.0
 )
 
 require (
@@ -25,7 +30,6 @@ require (
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/agl/ed25519 v0.0.0-20170116200512-5312a6153412 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.2.2 // indirect
-	github.com/btcsuite/btcd/btcutil v1.1.3 // indirect
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.8 // indirect
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1 // indirect
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.2 // indirect
@@ -49,7 +53,6 @@ require (
 	github.com/decred/dcrd/dcrjson/v4 v4.0.1 // indirect
 	github.com/decred/dcrd/dcrutil/v4 v4.0.1 // indirect
 	github.com/decred/dcrd/gcs/v4 v4.0.0 // indirect
-	github.com/decred/dcrd/hdkeychain/v3 v3.1.1 // indirect
 	github.com/decred/dcrd/lru v1.1.1 // indirect
 	github.com/decred/dcrd/rpc/jsonrpc/types/v4 v4.0.0 // indirect
 	github.com/decred/dcrd/txscript/v4 v4.1.0 // indirect
@@ -71,18 +74,17 @@ require (
 	github.com/ltcsuite/lnd/queue v1.0.3 // indirect
 	github.com/ltcsuite/lnd/ticker v1.0.1 // indirect
 	github.com/ltcsuite/ltcd/btcec/v2 v2.1.0 // indirect
-	github.com/ltcsuite/ltcd/ltcutil v1.1.0 // indirect
 	github.com/ltcsuite/ltcd/ltcutil/psbt v1.1.0-1 // indirect
 	github.com/ltcsuite/ltcwallet/wallet/txauthor v1.1.0 // indirect
 	github.com/ltcsuite/ltcwallet/wallet/txrules v1.2.0 // indirect
 	github.com/ltcsuite/ltcwallet/wallet/txsizes v1.1.0 // indirect
 	github.com/ltcsuite/neutrino v0.13.2 // indirect
+	github.com/stretchr/testify v1.8.2 // indirect
 	go.etcd.io/bbolt v1.3.7 // indirect
-	golang.org/x/crypto v0.7.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
 	golang.org/x/term v0.6.0 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 )
 
-go 1.20
+go 1.19

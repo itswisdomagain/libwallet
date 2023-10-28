@@ -4,16 +4,18 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"sync"
 
+	"decred.org/dcrwallet/v3/spv"
 	"decred.org/dcrwallet/v3/wallet"
 	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/slog"
+	"github.com/itswisdomagain/libwallet/asset"
 )
 
 type mainWallet = wallet.Wallet
 
 type Wallet struct {
+	*asset.WalletBase
 	dir         string
 	dbDriver    string
 	chainParams *chaincfg.Params
@@ -22,17 +24,26 @@ type Wallet struct {
 	db wallet.DB
 	*mainWallet
 
-	syncMtx sync.Mutex
-	syncer  *spvSyncer
+	syncer *spv.Syncer
 }
 
-// OpenWallet opens the wallet database and the wallet.
+// MainWallet returns the main dcr wallet with the core wallet functionalities.
+func (w *Wallet) MainWallet() *wallet.Wallet {
+	return w.mainWallet
+}
+
+// WalletOpened returns true if the main wallet has been opened.
+func (w *Wallet) WalletOpened() bool {
+	return w.mainWallet != nil
+}
+
+// OpenWallet opens the wallet database and the main wallet.
 func (w *Wallet) OpenWallet(ctx context.Context) error {
 	if w.mainWallet != nil {
 		return fmt.Errorf("wallet is already open")
 	}
 
-	w.log.Debug("Opening DCR wallet...")
+	w.log.Info("Opening wallet...")
 	db, err := wallet.OpenDB(w.dbDriver, filepath.Join(w.dir, walletDbName))
 	if err != nil {
 		return fmt.Errorf("wallet.OpenDB error: %w", err)
@@ -52,28 +63,28 @@ func (w *Wallet) OpenWallet(ctx context.Context) error {
 
 	w.db = db
 	w.mainWallet = dcrw
-
 	return nil
 }
 
-// WalletOpened returns true if the wallet is opened and ready for use.
-func (w *Wallet) WalletOpened() bool {
-	return w.mainWallet != nil
-}
-
-// CloseWallet stops any active network syncrhonization and closes the wallet
+// CloseWallet stops any active network synchronization and closes the wallet
 // database.
 func (w *Wallet) CloseWallet() error {
-	if err := w.StopSync(); err != nil {
-		return fmt.Errorf("StopSync error: %w", err)
-	}
+	w.log.Info("Closing wallet")
+	w.StopSync()
+	w.WaitForSyncToStop()
 
+	w.log.Trace("Closing wallet db")
 	if err := w.db.Close(); err != nil {
 		return fmt.Errorf("Close wallet db error: %w", err)
 	}
 
-	w.log.Debug("DCR wallet closed")
+	w.log.Info("Wallet closed")
 	w.mainWallet = nil
 	w.db = nil
 	return nil
+}
+
+// Shutdown closes the main wallet and any other resources in use.
+func (w *Wallet) Shutdown() error {
+	return w.CloseWallet()
 }

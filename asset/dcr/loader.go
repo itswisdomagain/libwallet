@@ -9,6 +9,7 @@ import (
 
 	"decred.org/dcrwallet/v3/wallet"
 	_ "decred.org/dcrwallet/v3/wallet/drivers/bdb"
+	"github.com/decred/dcrd/hdkeychain/v3"
 	"github.com/itswisdomagain/libwallet/asset"
 )
 
@@ -22,9 +23,9 @@ func WalletExistsAt(dataDir string) (bool, error) {
 	return fileExists(filepath.Join(dataDir, walletDbName))
 }
 
-// CreateWallet creates and opens a new SPV wallet. If recovery seed is not
-// provided, a new seed is generated and used. The wallet seed is encrypted with
-// the provided passphrase and can be revealed for backup later by providing the
+// CreateWallet creates and opens an SPV wallet. If recovery params is not
+// provided, a new seed is generated and used. The seed is encrypted with the
+// provided passphrase and can be revealed for backup later by providing the
 // passphrase.
 func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery *asset.RecoveryCfg) (*Wallet, error) {
 	chainParams, err := ParseChainParams(params.Net)
@@ -44,16 +45,20 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 	}
 
 	var seed []byte
-	if recovery != nil {
+	isRestored := recovery != nil
+	if isRestored {
 		seed = recovery.Seed
 	} else {
-		// TODO: Generate seed.
+		seed, err = hdkeychain.GenerateSeed(hdkeychain.RecommendedSeedLen)
+		if err != nil {
+			return nil, fmt.Errorf("unable to generate random seed: %v", err)
+		}
 	}
 
-	// TODO: Encrypt the seed with the private passphrase and save. Should be
-	// able to reveal the seed for this wallet later by providing the private
-	// passphrase. NOTE: cake wallet might require storing the seed without
-	// encrypting first. Insecure, but ...
+	wb, err := asset.NewWalletBase(params.OpenWalletParams, seed, params.Pass, isRestored)
+	if err != nil {
+		return nil, fmt.Errorf("CreateWalletBase error: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
@@ -68,8 +73,7 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 	bailOnWallet := true // changed to false if there are no errors below
 	defer func() {
 		if bailOnWallet {
-			err := db.Close()
-			if err != nil {
+			if err := db.Close(); err != nil {
 				fmt.Println("Error closing database after CreateWallet error:", err)
 			}
 
@@ -108,6 +112,7 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 
 	bailOnWallet = false
 	return &Wallet{
+		WalletBase:  wb,
 		dir:         params.DataDir,
 		dbDriver:    params.DbDriver,
 		chainParams: chainParams,
@@ -117,8 +122,8 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 	}, nil
 }
 
-// LoadWallet loads a previously created native SPV wallet. The wallet must be
-// opened via its OpenWallet method before it can be used.
+// LoadWallet loads a previously created SPV wallet. The wallet must be opened
+// via its OpenWallet method before it can be used.
 func LoadWallet(ctx context.Context, params asset.OpenWalletParams) (*Wallet, error) {
 	if exists, err := WalletExistsAt(params.DataDir); err != nil {
 		return nil, err
@@ -131,9 +136,13 @@ func LoadWallet(ctx context.Context, params asset.OpenWalletParams) (*Wallet, er
 		return nil, fmt.Errorf("error parsing chain params: %w", err)
 	}
 
-	// TODO: Load the (encrypted) seed as well.
+	wb, err := asset.OpenWalletBase(params)
+	if err != nil {
+		return nil, fmt.Errorf("OpenWalletBase error: %v", err)
+	}
 
 	return &Wallet{
+		WalletBase:  wb,
 		dir:         params.DataDir,
 		dbDriver:    params.DbDriver,
 		chainParams: chainParams,

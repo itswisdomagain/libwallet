@@ -1,14 +1,12 @@
 package ltc
 
 import (
-	"errors"
 	"fmt"
-	"path/filepath"
-	"sync"
 
+	neutrino "github.com/dcrlabs/neutrino-ltc"
+	"github.com/dcrlabs/neutrino-ltc/chain"
 	"github.com/decred/slog"
 	"github.com/itswisdomagain/libwallet/asset"
-	"github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcwallet/wallet"
 	"github.com/ltcsuite/ltcwallet/walletdb"
 	_ "github.com/ltcsuite/ltcwallet/walletdb/bdb"
@@ -19,78 +17,82 @@ var waddrmgrNamespace = []byte("waddrmgr")
 type mainWallet = wallet.Wallet
 
 type Wallet struct {
-	dir         string
-	dbDriver    string
-	chainParams *chaincfg.Params
-	log         slog.Logger
-
-	loader *wallet.Loader
-	db     walletdb.DB
+	*asset.WalletBase
 	*mainWallet
 
-	syncMtx sync.Mutex
-	syncer  *asset.SyncHelper
+	dir          string
+	dbDriver     string
+	log          slog.Logger
+	loader       *wallet.Loader
+	db           walletdb.DB
+	chainService *neutrino.ChainService
+	chainClient  *chain.NeutrinoClient
 }
 
-// OpenWallet opens the wallet database and the wallet.
+// MainWallet returns the main ltc wallet with the core wallet functionalities.
+func (w *Wallet) MainWallet() *wallet.Wallet {
+	return w.mainWallet
+}
+
+// WalletOpened returns true if the main wallet has been opened.
+func (w *Wallet) WalletOpened() bool {
+	return w.mainWallet != nil
+}
+
+// OpenWallet opens the main wallet.
 func (w *Wallet) OpenWallet() error {
 	if w.mainWallet != nil {
 		return fmt.Errorf("wallet is already open")
 	}
 
-	// timeout and recoverWindow arguments borrowed from btcwallet directly.
-	w.loader = wallet.NewLoader(w.chainParams, w.dir, true, dbTimeout, 250)
-
-	exists, err := w.loader.WalletExists()
-	if err != nil {
-		return fmt.Errorf("error verifying wallet existence: %v", err)
-	}
-	if !exists {
-		return errors.New("wallet not found")
-	}
-
-	w.log.Debug("Opening LTC wallet...")
+	w.log.Info("Opening wallet...")
 	ltcw, err := w.loader.OpenExistingWallet([]byte(wallet.InsecurePubPassphrase), false)
 	if err != nil {
-		return fmt.Errorf("couldn't load wallet: %w", err)
+		return fmt.Errorf("OpenExistingWallet error: %w", err)
 	}
 
-	neutrinoDBPath := filepath.Join(w.dir, neutrinoDBName)
-	db, err := walletdb.Open(w.dbDriver, neutrinoDBPath, true, dbTimeout) // TODO: DEX uses Create!
-	if err != nil {
-		if unloadErr := w.loader.UnloadWallet(); unloadErr != nil {
-			w.log.Errorf("Error unloading wallet after OpenWallet error:", unloadErr)
-		}
-		return fmt.Errorf("unable to open wallet db at %q: %v", neutrinoDBPath, err)
-	}
-
-	w.db = db
 	w.mainWallet = ltcw
 	return nil
 }
 
-// WalletOpened returns true if the wallet is opened and ready for use.
-func (w *Wallet) WalletOpened() bool {
-	return w.mainWallet != nil
-}
-
-// CloseWallet stops any active network syncrhonization, unloads the wallet and
-// closes the neutrino chain db.
+// CloseWallet stops any active network synchronization and unloads the main
+// wallet.
 func (w *Wallet) CloseWallet() error {
-	if err := w.StopSync(); err != nil {
-		return fmt.Errorf("StopSync error: %w", err)
-	}
+	w.log.Info("Closing wallet")
+	w.StopSync()
+	w.WaitForSyncToStop()
 
+	w.log.Trace("Unloading wallet")
 	if err := w.loader.UnloadWallet(); err != nil {
 		return err
 	}
 
-	if err := w.db.Close(); err != nil {
+	w.log.Info("Wallet closed")
+	w.mainWallet = nil
+	return nil
+}
+
+// Shutdown closes the main wallet and any other resources in use.
+func (w *Wallet) Shutdown() error {
+	if err := w.CloseWallet(); err != nil {
 		return err
 	}
 
-	w.log.Debug("LTC wallet closed")
-	w.mainWallet = nil
+	// Closing the wallet does not stop the neutrino chain service, stop it now
+	// before closing the neutrino DB.
+	w.log.Trace("Stopping neutrino chain service")
+	if err := w.chainService.Stop(); err != nil {
+		w.log.Errorf("error stopping neutrino chain service: %v", err)
+	}
+
+	w.log.Trace("Closing neutrino db")
+	if err := w.db.Close(); err != nil {
+		w.log.Errorf("error closing neutrino db: %v", err)
+	}
+
+	w.log.Info("Wallet shutdown complete")
+	w.chainClient = nil
+	w.chainService = nil
 	w.db = nil
 	return nil
 }
