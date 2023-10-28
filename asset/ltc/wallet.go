@@ -16,8 +16,8 @@ var waddrmgrNamespace = []byte("waddrmgr")
 
 type mainWallet = wallet.Wallet
 
-type Wallet struct {
-	*asset.WalletBase
+type Wallet[Tx any] struct {
+	*asset.WalletBase[Tx]
 	*mainWallet
 
 	dir          string
@@ -30,17 +30,17 @@ type Wallet struct {
 }
 
 // MainWallet returns the main ltc wallet with the core wallet functionalities.
-func (w *Wallet) MainWallet() *wallet.Wallet {
+func (w *Wallet[_]) MainWallet() *wallet.Wallet {
 	return w.mainWallet
 }
 
 // WalletOpened returns true if the main wallet has been opened.
-func (w *Wallet) WalletOpened() bool {
+func (w *Wallet[_]) WalletOpened() bool {
 	return w.mainWallet != nil
 }
 
 // OpenWallet opens the main wallet.
-func (w *Wallet) OpenWallet() error {
+func (w *Wallet[_]) OpenWallet() error {
 	if w.mainWallet != nil {
 		return fmt.Errorf("wallet is already open")
 	}
@@ -57,7 +57,7 @@ func (w *Wallet) OpenWallet() error {
 
 // CloseWallet stops any active network synchronization and unloads the main
 // wallet.
-func (w *Wallet) CloseWallet() error {
+func (w *Wallet[_]) CloseWallet() error {
 	w.log.Info("Closing wallet")
 	w.StopSync()
 	w.WaitForSyncToStop()
@@ -73,7 +73,7 @@ func (w *Wallet) CloseWallet() error {
 }
 
 // Shutdown closes the main wallet and any other resources in use.
-func (w *Wallet) Shutdown() error {
+func (w *Wallet[_]) Shutdown() error {
 	if err := w.CloseWallet(); err != nil {
 		return err
 	}

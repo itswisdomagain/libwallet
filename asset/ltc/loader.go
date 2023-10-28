@@ -33,7 +33,7 @@ func WalletExistsAt(dir string) (bool, error) {
 // provided, a new seed is generated and used. The seed is encrypted with the
 // provided passphrase and can be revealed for backup later by providing the
 // passphrase.
-func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery *asset.RecoveryCfg) (*Wallet, error) {
+func CreateWallet[Tx any](ctx context.Context, params asset.CreateWalletParams[Tx], recovery *asset.RecoveryCfg) (*Wallet[Tx], error) {
 	chainParams, err := ParseChainParams(params.Net)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing chain: %w", err)
@@ -99,7 +99,7 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 
 	bailOnWallet = false
 	btcLogger := &assetlog.BTCLogger{Logger: params.Logger}
-	return &Wallet{
+	return &Wallet[Tx]{
 		WalletBase:   wb,
 		mainWallet:   ltcw,
 		dir:          params.DataDir,
@@ -113,7 +113,7 @@ func CreateWallet(ctx context.Context, params asset.CreateWalletParams, recovery
 }
 
 // CreateWatchOnlyWallet creates and opens a watchonly SPV wallet.
-func CreateWatchOnlyWallet(ctx context.Context, extendedPubKey string, params asset.CreateWalletParams) (*Wallet, error) {
+func CreateWatchOnlyWallet[Tx any](ctx context.Context, extendedPubKey string, params asset.CreateWalletParams[Tx]) (*Wallet[Tx], error) {
 	chainParams, err := ParseChainParams(params.Net)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing chain: %w", err)
@@ -161,7 +161,7 @@ func CreateWatchOnlyWallet(ctx context.Context, extendedPubKey string, params as
 
 	bailOnWallet = false
 	btcLogger := &assetlog.BTCLogger{Logger: params.Logger}
-	return &Wallet{
+	return &Wallet[Tx]{
 		WalletBase:   wb,
 		mainWallet:   ltcw,
 		dir:          params.DataDir,
@@ -176,7 +176,7 @@ func CreateWatchOnlyWallet(ctx context.Context, extendedPubKey string, params as
 
 // LoadWallet loads a previously created SPV wallet. The wallet must be opened
 // via its OpenWallet method before it can be used.
-func LoadWallet(ctx context.Context, params asset.OpenWalletParams) (*Wallet, error) {
+func LoadWallet[Tx any](ctx context.Context, params asset.OpenWalletParams[Tx]) (*Wallet[Tx], error) {
 	chainParams, err := ParseChainParams(params.Net)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing chain params: %w", err)
@@ -207,7 +207,7 @@ func LoadWallet(ctx context.Context, params asset.OpenWalletParams) (*Wallet, er
 	}
 
 	btcLogger := &assetlog.BTCLogger{Logger: params.Logger}
-	return &Wallet{
+	return &Wallet[Tx]{
 		WalletBase:   wb,
 		dir:          params.DataDir,
 		dbDriver:     params.DbDriver,

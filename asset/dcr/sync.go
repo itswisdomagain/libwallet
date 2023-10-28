@@ -14,7 +14,7 @@ import (
 // immediately. The wallet stays connected in the background until the provided
 // ctx is canceled or either StopSync or CloseWallet is called.
 // TODO: Accept sync ntfn listeners.
-func (w *Wallet) StartSync(ctx context.Context, connectPeers ...string) error {
+func (w *Wallet[_]) StartSync(ctx context.Context, connectPeers ...string) error {
 	// Initialize the ctx to use for sync. Will error if sync was already
 	// started.
 	ctx, err := w.InitializeSyncContext(ctx)
@@ -62,7 +62,7 @@ func (w *Wallet) StartSync(ctx context.Context, connectPeers ...string) error {
 
 // IsSyncing returns true if the wallet is catching up to the mainchain's best
 // block.
-func (w *Wallet) IsSyncing() bool {
+func (w *Wallet[_]) IsSyncing() bool {
 	if w.IsSynced() {
 		return false
 	}
@@ -71,7 +71,7 @@ func (w *Wallet) IsSyncing() bool {
 
 // IsSynced returns true if the wallet has synced up to the best block on the
 // mainchain.
-func (w *Wallet) IsSynced() bool {
+func (w *Wallet[_]) IsSynced() bool {
 	if w.syncer != nil {
 		return w.syncer.Synced()
 	}
