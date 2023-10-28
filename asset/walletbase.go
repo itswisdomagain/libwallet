@@ -11,15 +11,19 @@ import (
 )
 
 const (
+	walletTraitsDBKey             = "traits"
 	encryptedSeedDBKey            = "encryptedSeed"
-	isRestoredDBKey               = "isRestored"
 	accountDiscoveryRequiredDBKey = "accountDiscoveryRequired"
 )
 
-type WalletBase struct {
+type WalletBase[Tx any] struct {
 	// UserConfigDB is publicly embedded, so consumers can directly read from or
 	// write to the user config db.
 	walletdata.UserConfigDB
+	// TxIndexDB is embedded so consumers can call tx indexing methods directly.
+	// TxIndexDB may be nil and calling tx indexing methods when this field is
+	// nil may panic.
+	walletdata.TxIndexDB[Tx]
 
 	// db is private, for internal use only.
 	db      walletdata.WalletConfigDB
@@ -37,7 +41,7 @@ type WalletBase struct {
 
 // NewWalletBase initializes a WalletBase using the information provided. The
 // wallet's seed is encrypted and saved, along with other basic wallet info.
-func NewWalletBase(params OpenWalletParams, seed, walletPass []byte, traits WalletTrait) (*WalletBase, error) {
+func NewWalletBase[Tx any](params OpenWalletParams[Tx], seed, walletPass []byte, traits WalletTrait) (*WalletBase[Tx], error) {
 	isWatchOnly, isRestored := isWatchOnly(traits), isRestored(traits)
 	if isWatchOnly && isRestored {
 		return nil, fmt.Errorf("invalid wallet traits: restored wallet cannot be watch only")
@@ -66,9 +70,11 @@ func NewWalletBase(params OpenWalletParams, seed, walletPass []byte, traits Wall
 
 	// Save the initial data to db.
 	dbData := map[string]any{
-		encryptedSeedDBKey:            encryptedSeed,
-		isRestoredDBKey:               isRestored,
+		walletTraitsDBKey:             traits,
 		accountDiscoveryRequiredDBKey: accountDiscoveryRequired,
+	}
+	if len(encryptedSeed) > 0 {
+		dbData[encryptedSeedDBKey] = encryptedSeed
 	}
 	for key, value := range dbData {
 		if err := params.WalletConfigDB.SaveWalletConfigValue(key, value); err != nil {
@@ -76,8 +82,9 @@ func NewWalletBase(params OpenWalletParams, seed, walletPass []byte, traits Wall
 		}
 	}
 
-	return &WalletBase{
+	return &WalletBase[Tx]{
 		UserConfigDB:             params.UserConfigDB,
+		TxIndexDB:                params.TxIndexDB,
 		db:                       params.WalletConfigDB,
 		log:                      params.Logger,
 		dataDir:                  params.DataDir,
@@ -91,9 +98,10 @@ func NewWalletBase(params OpenWalletParams, seed, walletPass []byte, traits Wall
 
 // OpenWalletBase loads basic information for an existing wallet from the
 // provided params.
-func OpenWalletBase(params OpenWalletParams) (*WalletBase, error) {
-	w := &WalletBase{
+func OpenWalletBase[Tx any](params OpenWalletParams[Tx]) (*WalletBase[Tx], error) {
+	w := &WalletBase[Tx]{
 		UserConfigDB: params.UserConfigDB,
+		TxIndexDB:    params.TxIndexDB,
 		db:           params.WalletConfigDB,
 		log:          params.Logger,
 		dataDir:      params.DataDir,
@@ -110,7 +118,7 @@ func OpenWalletBase(params OpenWalletParams) (*WalletBase, error) {
 	if err := readFromDB(encryptedSeedDBKey, &w.encryptedSeed); err != nil {
 		return nil, err
 	}
-	if err := readFromDB(isRestoredDBKey, &w.isRestored); err != nil {
+	if err := readFromDB(walletTraitsDBKey, &w.traits); err != nil {
 		return nil, err
 	}
 	if err := readFromDB(accountDiscoveryRequiredDBKey, &w.accountDiscoveryRequired); err != nil {
@@ -120,16 +128,16 @@ func OpenWalletBase(params OpenWalletParams) (*WalletBase, error) {
 	return w, nil
 }
 
-func (w *WalletBase) DataDir() string {
+func (w *WalletBase[_]) DataDir() string {
 	return w.dataDir
 }
 
-func (w *WalletBase) Network() Network {
+func (w *WalletBase[_]) Network() Network {
 	return w.network
 }
 
 // DecryptSeed decrypts the encrypted wallet seed using the provided passphrase.
-func (w *WalletBase) DecryptSeed(passphrase []byte) (string, error) {
+func (w *WalletBase[_]) DecryptSeed(passphrase []byte) (string, error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
@@ -145,7 +153,7 @@ func (w *WalletBase) DecryptSeed(passphrase []byte) (string, error) {
 	return walletseed.EncodeMnemonic(seed), nil
 }
 
-func (w *WalletBase) ReEncryptSeed(oldPass, newPass []byte) error {
+func (w *WalletBase[_]) ReEncryptSeed(oldPass, newPass []byte) error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
@@ -170,7 +178,7 @@ func (w *WalletBase) ReEncryptSeed(oldPass, newPass []byte) error {
 // SeedVerificationRequired is true if the seed for this wallet is yet to be
 // verified by the owner. The wallet's seed is saved in an encrypted form until
 // it is verified.
-func (w *WalletBase) SeedVerificationRequired() bool {
+func (w *WalletBase[_]) SeedVerificationRequired() bool {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 	return len(w.encryptedSeed) > 0
@@ -179,7 +187,7 @@ func (w *WalletBase) SeedVerificationRequired() bool {
 // VerifySeed decrypts the encrypted wallet seed using the provided passphrase
 // and compares it with the provided seedMnemonic. If it's a match, the wallet
 // seed will no longer be saved.
-func (w *WalletBase) VerifySeed(seedMnemonic string, passphrase []byte) (bool, error) {
+func (w *WalletBase[_]) VerifySeed(seedMnemonic string, passphrase []byte) (bool, error) {
 	seedToCompare, err := walletseed.DecodeUserInput(seedMnemonic)
 	if err != nil {
 		return false, fmt.Errorf("invalid seed provided")
@@ -210,25 +218,25 @@ func (w *WalletBase) VerifySeed(seedMnemonic string, passphrase []byte) (bool, e
 	return true, nil
 }
 
-func (w *WalletBase) IsWatchOnly() bool {
+func (w *WalletBase[_]) IsWatchOnly() bool {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 	return isWatchOnly(w.traits)
 }
 
-func (w *WalletBase) IsRestored() bool {
+func (w *WalletBase[_]) IsRestored() bool {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 	return isRestored(w.traits)
 }
 
-func (w *WalletBase) AccountDiscoveryRequired() bool {
+func (w *WalletBase[_]) AccountDiscoveryRequired() bool {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 	return w.accountDiscoveryRequired
 }
 
-func (w *WalletBase) MarkAccountDiscoveryComplete() {
+func (w *WalletBase[_]) MarkAccountDiscoveryComplete() {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 	w.accountDiscoveryRequired = false
@@ -239,12 +247,12 @@ func (w *WalletBase) MarkAccountDiscoveryComplete() {
 
 // ReadUserConfigBoolValue is a helper method for reading a bool user config
 // value from the wallet's config db.
-func (w *WalletBase) ReadUserConfigBoolValue(key string, defaultValue ...bool) bool {
+func (w *WalletBase[_]) ReadUserConfigBoolValue(key string, defaultValue ...bool) bool {
 	return walletdata.ReadUserConfigValue(w, key, defaultValue...)
 }
 
 // ReadUserConfigStringValue is a helper method for reading a string user config
 // value from the wallet's config db.
-func (w *WalletBase) ReadUserConfigStringValue(key string, defaultValue ...string) string {
+func (w *WalletBase[_]) ReadUserConfigStringValue(key string, defaultValue ...string) string {
 	return walletdata.ReadUserConfigValue(w, key, defaultValue...)
 }

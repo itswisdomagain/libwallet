@@ -8,18 +8,22 @@ import (
 )
 
 // CreateWalletParams are the parameters for opening a wallet.
-type OpenWalletParams struct {
+type OpenWalletParams[Tx any] struct {
 	Net            Network
 	DataDir        string
 	DbDriver       string
 	Logger         slog.Logger
 	UserConfigDB   walletdata.UserConfigDB
 	WalletConfigDB walletdata.WalletConfigDB
+
+	// TxIndexDB is only required if transaction indexing is desired. Can be nil
+	// otherwise.
+	TxIndexDB walletdata.TxIndexDB[Tx]
 }
 
 // CreateWalletParams are the parameters for creating a wallet.
-type CreateWalletParams struct {
-	OpenWalletParams
+type CreateWalletParams[Tx any] struct {
+	OpenWalletParams[Tx]
 	Pass     []byte
 	Birthday time.Time
 }

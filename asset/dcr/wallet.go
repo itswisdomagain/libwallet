@@ -14,8 +14,8 @@ import (
 
 type mainWallet = wallet.Wallet
 
-type Wallet struct {
-	*asset.WalletBase
+type Wallet[Tx any] struct {
+	*asset.WalletBase[Tx]
 	dir         string
 	dbDriver    string
 	chainParams *chaincfg.Params
@@ -28,17 +28,17 @@ type Wallet struct {
 }
 
 // MainWallet returns the main dcr wallet with the core wallet functionalities.
-func (w *Wallet) MainWallet() *wallet.Wallet {
+func (w *Wallet[_]) MainWallet() *wallet.Wallet {
 	return w.mainWallet
 }
 
 // WalletOpened returns true if the main wallet has been opened.
-func (w *Wallet) WalletOpened() bool {
+func (w *Wallet[_]) WalletOpened() bool {
 	return w.mainWallet != nil
 }
 
 // OpenWallet opens the wallet database and the main wallet.
-func (w *Wallet) OpenWallet(ctx context.Context) error {
+func (w *Wallet[_]) OpenWallet(ctx context.Context) error {
 	if w.mainWallet != nil {
 		return fmt.Errorf("wallet is already open")
 	}
@@ -68,7 +68,7 @@ func (w *Wallet) OpenWallet(ctx context.Context) error {
 
 // CloseWallet stops any active network synchronization and closes the wallet
 // database.
-func (w *Wallet) CloseWallet() error {
+func (w *Wallet[_]) CloseWallet() error {
 	w.log.Info("Closing wallet")
 	w.StopSync()
 	w.WaitForSyncToStop()
@@ -85,6 +85,6 @@ func (w *Wallet) CloseWallet() error {
 }
 
 // Shutdown closes the main wallet and any other resources in use.
-func (w *Wallet) Shutdown() error {
+func (w *Wallet[_]) Shutdown() error {
 	return w.CloseWallet()
 }

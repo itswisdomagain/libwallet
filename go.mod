@@ -2,7 +2,7 @@ module github.com/itswisdomagain/libwallet
 
 require (
 	decred.org/dcrwallet/v3 v3.0.1
-	github.com/asdine/storm v2.1.2+incompatible
+	github.com/asdine/storm v0.0.0-20190216191021-fe89819f6282
 	github.com/btcsuite/btcd v0.23.4
 	github.com/btcsuite/btcd/btcutil v1.1.3
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
