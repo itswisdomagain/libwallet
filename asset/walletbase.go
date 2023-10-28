@@ -7,9 +7,22 @@ import (
 
 	"decred.org/dcrwallet/v3/walletseed"
 	"github.com/decred/slog"
+	"github.com/itswisdomagain/libwallet/walletdata"
+)
+
+const (
+	encryptedSeedDBKey            = "encryptedSeed"
+	isRestoredDBKey               = "isRestored"
+	accountDiscoveryRequiredDBKey = "accountDiscoveryRequired"
 )
 
 type WalletBase struct {
+	// UserConfigDB is publicly embedded, so consumers can directly read from or
+	// write to the user config db.
+	walletdata.UserConfigDB
+
+	// db is private, for internal use only.
+	db      walletdata.WalletConfigDB
 	log     slog.Logger
 	dataDir string
 	network Network
@@ -51,9 +64,21 @@ func NewWalletBase(params OpenWalletParams, seed, walletPass []byte, traits Wall
 	// Account discovery is only required for restored wallets.
 	accountDiscoveryRequired := isRestored
 
-	// TODO: Save wallet data to db.
+	// Save the initial data to db.
+	dbData := map[string]any{
+		encryptedSeedDBKey:            encryptedSeed,
+		isRestoredDBKey:               isRestored,
+		accountDiscoveryRequiredDBKey: accountDiscoveryRequired,
+	}
+	for key, value := range dbData {
+		if err := params.WalletConfigDB.SaveWalletConfigValue(key, value); err != nil {
+			return nil, fmt.Errorf("error saving wallet.%s to db: %v", key, err)
+		}
+	}
 
 	return &WalletBase{
+		UserConfigDB:             params.UserConfigDB,
+		db:                       params.WalletConfigDB,
 		log:                      params.Logger,
 		dataDir:                  params.DataDir,
 		network:                  params.Net,
@@ -68,13 +93,29 @@ func NewWalletBase(params OpenWalletParams, seed, walletPass []byte, traits Wall
 // provided params.
 func OpenWalletBase(params OpenWalletParams) (*WalletBase, error) {
 	w := &WalletBase{
-		log:        params.Logger,
-		dataDir:    params.DataDir,
-		network:    params.Net,
-		syncHelper: &syncHelper{log: params.Logger},
+		UserConfigDB: params.UserConfigDB,
+		db:           params.WalletConfigDB,
+		log:          params.Logger,
+		dataDir:      params.DataDir,
+		network:      params.Net,
+		syncHelper:   &syncHelper{log: params.Logger},
 	}
 
-	// TODO: Read wallet data from db.
+	readFromDB := func(key string, wFieldPtr any) error {
+		if err := params.WalletConfigDB.ReadWalletConfigValue(key, wFieldPtr); err != nil {
+			return fmt.Errorf("error reading wallet.%s from db: %v", key, err)
+		}
+		return nil
+	}
+	if err := readFromDB(encryptedSeedDBKey, &w.encryptedSeed); err != nil {
+		return nil, err
+	}
+	if err := readFromDB(isRestoredDBKey, &w.isRestored); err != nil {
+		return nil, err
+	}
+	if err := readFromDB(accountDiscoveryRequiredDBKey, &w.accountDiscoveryRequired); err != nil {
+		return nil, err
+	}
 
 	return w, nil
 }
@@ -117,7 +158,10 @@ func (w *WalletBase) ReEncryptSeed(oldPass, newPass []byte) error {
 		return err
 	}
 
-	// TODO: Save reEncryptedSeed to db.
+	if err = w.db.SaveWalletConfigValue(encryptedSeedDBKey, reEncryptedSeed); err != nil {
+		w.log.Errorf("db.SaveWalletConfigValue(encryptedSeed) error: %v", err)
+		return fmt.Errorf("database error")
+	}
 
 	w.encryptedSeed = reEncryptedSeed
 	return nil
@@ -157,7 +201,10 @@ func (w *WalletBase) VerifySeed(seedMnemonic string, passphrase []byte) (bool, e
 		return false, fmt.Errorf("incorrect seed provided")
 	}
 
-	// TODO: Delete encryptedSeed from db.
+	if err = w.db.DeleteWalletConfigValue(encryptedSeedDBKey); err != nil {
+		w.log.Errorf("db.DeleteWalletConfigValue(encryptedSeed) error: %v", err)
+		return false, fmt.Errorf("database error")
+	}
 
 	w.encryptedSeed = nil
 	return true, nil
@@ -185,5 +232,19 @@ func (w *WalletBase) MarkAccountDiscoveryComplete() {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 	w.accountDiscoveryRequired = false
-	// TODO: Update accountDiscoveryRequired value in db.
+	if err := w.db.SaveWalletConfigValue(accountDiscoveryRequiredDBKey, w.accountDiscoveryRequired); err != nil {
+		w.log.Errorf("error marking wallet discovery complete: %v", err)
+	}
+}
+
+// ReadUserConfigBoolValue is a helper method for reading a bool user config
+// value from the wallet's config db.
+func (w *WalletBase) ReadUserConfigBoolValue(key string, defaultValue ...bool) bool {
+	return walletdata.ReadUserConfigValue(w, key, defaultValue...)
+}
+
+// ReadUserConfigStringValue is a helper method for reading a string user config
+// value from the wallet's config db.
+func (w *WalletBase) ReadUserConfigStringValue(key string, defaultValue ...string) string {
+	return walletdata.ReadUserConfigValue(w, key, defaultValue...)
 }
