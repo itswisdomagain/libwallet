@@ -49,10 +49,11 @@ func Initialize[Tx any](dbPath string, txIndexCfg *TxIndexDBConfig[Tx]) (*DB[Tx]
 	sampleTx := txIndexCfg.makeEmptyTx()
 
 	// TODO: Use reflection to verify that the provided txIndexCfg.uniqueTxField
-	// has a `storm:"unique"` tag. Also read all indexed fields into a slice and
-	// log a warning if tx lookup is performed using a field that is not in the
-	// indexed fields slice. Additionally, if the list of indexed fields found
-	// now differs from what was last used, reindex the database.
+	// has a `storm:"unique"` tag and to validate the txIndexCfg.txHeightField.
+	// Also read all indexed fields into a slice and log a warning if tx lookup
+	// is performed using a field that is not in the indexed fields slice.
+	// Additionally, if the list of indexed fields found now differs from what
+	// was last used, reindex the database.
 
 	latestTxVersion := txIndexCfg.txVersion
 	db, dbTxVersion, err := openOrCreateDB(dbPath, latestTxVersion)

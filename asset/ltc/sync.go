@@ -23,6 +23,15 @@ func (s *ltcChainService) Peers() []asset.SPVPeer {
 	return peers
 }
 
+// ConnectedPeersCount returns the number of peers this wallet is currently
+// connected to.
+func (w *Wallet[Tx]) ConnectedPeersCount() int {
+	if !w.IsConnectedToNetwork() {
+		return 0
+	}
+	return len(w.chainService.Peers())
+}
+
 // StartSync connects the wallet to the blockchain network via SPV and returns
 // immediately. The wallet stays connected in the background until the provided
 // ctx is canceled or either StopSync or CloseWallet is called.
@@ -37,7 +46,7 @@ func (w *Wallet[_]) StartSync(ctx context.Context, connectPeers []string, savedP
 
 	w.log.Info("Starting sync...")
 	if err = w.chainClient.Start(); err != nil { // lazily starts connmgr
-		w.SyncEnded(err)
+		w.SyncHasStopped(err)
 		return fmt.Errorf("couldn't start Neutrino client: %v", err)
 	}
 
@@ -78,23 +87,23 @@ func (w *Wallet[_]) StartSync(ctx context.Context, connectPeers []string, savedP
 		w.mainWallet.Start()
 
 		// Finally, signal that the sync has ended without any error.
-		w.SyncEnded(nil)
+		w.SyncHasStopped(nil)
 	}()
 
 	return nil
 }
 
 // IsSyncing returns true if the wallet is catching up to the mainchain's best
-// block.
+// block. Returns false if the wallet is synced up to the best block on the main
+// chain.
 func (w *Wallet[_]) IsSyncing() bool {
-	if w.IsSynced() {
-		return false
-	}
-	return w.IsSyncingOrSynced()
+	return w.IsConnectedToNetwork() && !w.ChainSynced()
 }
 
 // IsSynced returns true if the wallet has synced up to the best block on the
 // mainchain.
 func (w *Wallet[_]) IsSynced() bool {
-	return w.ChainSynced()
+	// Just w.ChainSynced() is not enough as that can return true even if the
+	// wallet has been disconnected from the network.
+	return w.IsConnectedToNetwork() && w.ChainSynced()
 }

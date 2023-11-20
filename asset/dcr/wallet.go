@@ -88,3 +88,23 @@ func (w *Wallet[_]) CloseWallet() error {
 func (w *Wallet[_]) Shutdown() error {
 	return w.CloseWallet()
 }
+
+// ChangePassphrase changes the wallet's private passphrase. If the wallet's
+// seed has not been backed up, the seed will be re-encrypted using the new
+// passphrase.
+func (w *Wallet[Tx]) ChangePassphrase(ctx context.Context, oldPass, newPass []byte) (err error) {
+	err = w.ChangePrivatePassphrase(ctx, oldPass, newPass)
+	if err != nil {
+		return err
+	}
+
+	if err = w.ReEncryptSeed(oldPass, newPass); err != nil {
+		// revert passphrase change
+		if err = w.ChangePrivatePassphrase(ctx, newPass, oldPass); err != nil {
+			w.log.Errorf("failed to undo wallet passphrase change: %w", err)
+		}
+		return fmt.Errorf("error re-encrypting wallet seed: %v", err)
+	}
+
+	return nil
+}

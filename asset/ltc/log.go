@@ -37,19 +37,13 @@ func InitGlobalLogging(externalLogDir string, errorLogger assetlog.ParentLogger)
 		return nil
 	}
 
-	logSpinner, err := assetlog.NewRotator(externalLogDir, LogFileName)
+	backendLog, err := assetlog.NewLogger(externalLogDir, LogFileName, true)
 	if err != nil {
-		return fmt.Errorf("error initializing log rotator: %w", err)
+		return fmt.Errorf("error initializing logger: %w", err)
 	}
-
-	if err != nil {
-		return fmt.Errorf("error initializing log rotator: %w", err)
-	}
-
-	backendLog := slog.NewBackend(logSpinner)
 
 	logger := func(name string, lvl slog.Level) btclog.Logger {
-		l := backendLog.Logger(name)
+		l := backendLog.SubLogger(name)
 		l.SetLevel(lvl)
 		if errorLogger != nil {
 			l = assetlog.NewLoggerPlus(l, errorLogger.SubLogger(name))

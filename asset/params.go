@@ -16,6 +16,9 @@ type OpenWalletParams[Tx any] struct {
 	UserConfigDB   walletdata.UserConfigDB
 	WalletConfigDB walletdata.WalletConfigDB
 
+	// TransformTx is only required if transaction indexing and/or transaction
+	// notifications is/are desired. Can be nil otherwise.
+	TransformTx func(blockHeight int32, tx any, network Network) (*Tx, error)
 	// TxIndexDB is only required if transaction indexing is desired. Can be nil
 	// otherwise.
 	TxIndexDB walletdata.TxIndexDB[Tx]

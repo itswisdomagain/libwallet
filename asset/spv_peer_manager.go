@@ -20,18 +20,6 @@ const (
 	DiscoveredPeer
 )
 
-type walletPeer struct {
-	source       PeerSource
-	resolvedName string
-}
-
-// WalletPeer provides information about a wallet's peer.
-type WalletPeer struct {
-	Addr      string     `json:"addr"`
-	Source    PeerSource `json:"source"`
-	Connected bool       `json:"connected"`
-}
-
 // SPVPeer is satisfied by *neutrino.ServerPeer, but is generalized to
 // accommodate underlying implementations other than lightninglabs/neutrino.
 type SPVPeer interface {
@@ -51,29 +39,25 @@ type PeerManagerChainService interface {
 // SPVPeerManager implements peer management functionality for all bitcoin
 // clone SPV wallets.
 type SPVPeerManager struct {
-	cs PeerManagerChainService
+	cs                 PeerManagerChainService
+	defaultPort        string
+	defaultPeers       []string
+	savedPeersFilePath string
+	log                slog.Logger
 
 	peersMtx sync.RWMutex
-	peers    map[string]*walletPeer
-
-	savedPeersFilePath string
-
-	defaultPeers []string
-
-	defaultPort string
-
-	log slog.Logger
+	peers    map[string]string
 }
 
 // NewSPVPeerManager creates a new SPVPeerManager.
 func NewSPVPeerManager(cs PeerManagerChainService, defaultPeers []string, savedPeersFilePath string, log slog.Logger, defaultPort string) *SPVPeerManager {
 	return &SPVPeerManager{
 		cs:                 cs,
+		defaultPort:        defaultPort,
 		defaultPeers:       defaultPeers,
-		peers:              make(map[string]*walletPeer),
 		savedPeersFilePath: savedPeersFilePath,
 		log:                log,
-		defaultPort:        defaultPort,
+		peers:              make(map[string]string),
 	}
 }
 
@@ -84,38 +68,6 @@ func (s *SPVPeerManager) connectedPeers() map[string]struct{} {
 		connectedPeers[peer.Addr()] = struct{}{}
 	}
 	return connectedPeers
-}
-
-// Peers returns the list of peers that the wallet is connected to. It also
-// returns the peers that the user added that the wallet may not currently
-// be connected to.
-func (s *SPVPeerManager) Peers() ([]*WalletPeer, error) {
-	s.peersMtx.RLock()
-	defer s.peersMtx.RUnlock()
-
-	connectedPeers := s.connectedPeers()
-
-	walletPeers := make([]*WalletPeer, 0, len(connectedPeers))
-
-	for originalAddr, peer := range s.peers {
-		_, connected := connectedPeers[peer.resolvedName]
-		delete(connectedPeers, peer.resolvedName)
-		walletPeers = append(walletPeers, &WalletPeer{
-			Addr:      originalAddr,
-			Connected: connected,
-			Source:    peer.source,
-		})
-	}
-
-	for peer := range connectedPeers {
-		walletPeers = append(walletPeers, &WalletPeer{
-			Addr:      peer,
-			Connected: true,
-			Source:    DiscoveredPeer,
-		})
-	}
-
-	return walletPeers, nil
 }
 
 // resolveAddress resolves an address to ip:port. This is needed because neutrino
@@ -160,18 +112,6 @@ func (s *SPVPeerManager) resolveAddress(addr string) (string, error) {
 	return net.JoinHostPort(ip, strPort), nil
 }
 
-// peerWithResolvedAddress checks to see if there is a peer with a resolved
-// address in s.peers, and if so, returns the address that was user to add
-// the peer.
-func (s *SPVPeerManager) peerWithResolvedAddr(resolvedAddr string) (string, bool) {
-	for originalAddr, peer := range s.peers {
-		if peer.resolvedName == resolvedAddr {
-			return originalAddr, true
-		}
-	}
-	return "", false
-}
-
 // loadSavedPeersFromFile returns the contents of dexc-peers.json.
 func (s *SPVPeerManager) loadSavedPeersFromFile() (map[string]PeerSource, error) {
 	content, err := os.ReadFile(s.savedPeersFilePath)
@@ -201,6 +141,7 @@ func (s *SPVPeerManager) writeSavedPeersToFile(peers map[string]PeerSource) erro
 }
 
 func (s *SPVPeerManager) addPeer(addr string, source PeerSource, initialLoad bool) error {
+	println(addr)
 	s.peersMtx.Lock()
 	defer s.peersMtx.Unlock()
 
@@ -208,20 +149,23 @@ func (s *SPVPeerManager) addPeer(addr string, source PeerSource, initialLoad boo
 	if err != nil {
 		if initialLoad {
 			// If this is the initial load, we still want to add peers that are
-			// not able to be connected to the peers map, in order to display them
-			// to the user. If a user previously added a peer that originally connected
-			// but now the address cannot be resolved to an IP, it should be displayed
-			// that the wallet was unable to connect to that peer.
-			s.peers[addr] = &walletPeer{source: source}
+			// not able to be connected to the peers map, in order to display
+			// them to the user. If a user previously added a peer that
+			// originally connected but now the address cannot be resolved to an
+			// IP, it should be displayed that the wallet was unable to connect
+			// to that peer.
+			s.peers[addr] = ""
 		}
 		return fmt.Errorf("failed to resolve address: %v", err)
 	}
 
-	if duplicatePeer, found := s.peerWithResolvedAddr(resolvedAddr); found {
-		return fmt.Errorf("%s and %s resolve to the same node", duplicatePeer, addr)
+	for peerOriginalAddr, peerResolvedAddr := range s.peers {
+		if peerResolvedAddr == resolvedAddr {
+			return fmt.Errorf("%s and %s resolve to the same node", peerOriginalAddr, addr)
+		}
 	}
 
-	s.peers[addr] = &walletPeer{source: source, resolvedName: resolvedAddr}
+	s.peers[addr] = resolvedAddr
 
 	if !initialLoad {
 		savedPeers, err := s.loadSavedPeersFromFile()
@@ -239,7 +183,11 @@ func (s *SPVPeerManager) addPeer(addr string, source PeerSource, initialLoad boo
 	connectedPeers := s.connectedPeers()
 	_, connected := connectedPeers[resolvedAddr]
 	if !connected {
-		return s.cs.ConnectNode(resolvedAddr, true)
+		return nil
+	}
+
+	if err := s.cs.ConnectNode(resolvedAddr, true); err != nil {
+		return err
 	}
 
 	return nil
@@ -256,7 +204,7 @@ func (s *SPVPeerManager) RemovePeer(addr string) error {
 	s.peersMtx.Lock()
 	defer s.peersMtx.Unlock()
 
-	peer, found := s.peers[addr]
+	resolvedPeerAddr, found := s.peers[addr]
 	if !found {
 		return fmt.Errorf("peer not found: %v", addr)
 	}
@@ -274,9 +222,9 @@ func (s *SPVPeerManager) RemovePeer(addr string) error {
 	}
 
 	connectedPeers := s.connectedPeers()
-	_, connected := connectedPeers[peer.resolvedName]
+	_, connected := connectedPeers[resolvedPeerAddr]
 	if connected {
-		return s.cs.RemoveNodeByAddr(peer.resolvedName)
+		return s.cs.RemoveNodeByAddr(resolvedPeerAddr)
 	}
 
 	return nil
@@ -304,4 +252,14 @@ func (s *SPVPeerManager) ConnectToInitialWalletPeers() {
 			s.log.Errorf("failed to add peer %s: %v", addr, err)
 		}
 	}
+}
+
+func (s *SPVPeerManager) BestPeerHeight() (bestHeight int32) {
+	peers := s.cs.Peers()
+	for _, peer := range peers {
+		if peerHeight := peer.LastBlock(); peerHeight > bestHeight {
+			bestHeight = peerHeight
+		}
+	}
+	return bestHeight
 }
