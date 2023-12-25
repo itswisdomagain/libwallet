@@ -1,26 +1,26 @@
 package main
 
 import "C"
-import "decred.org/dcrwallet/v3/wallet/udb"
+import (
+	"decred.org/dcrwallet/v3/wallet/udb"
+)
 
 //export currentReceiveAddress
 func currentReceiveAddress(walletName *C.char) *C.char {
 	w, ok := loadedWallet(walletName)
 	if !ok {
-		return nil
+		return errCResponse("wallet with name %s no loaded", goString(walletName))
 	}
 
 	// Don't return an address if not synced!
 	if !w.IsSynced() {
-		w.log.Trace("currentReceiveAddress requested on an unsynced wallet")
-		return nil
+		return errCResponse("currentReceiveAddress requested on an unsynced wallet")
 	}
 
 	addr, err := w.CurrentAddress(udb.DefaultAccountNum)
 	if err != nil {
-		w.log.Errorf("w.CurrentAddress error: %v", err)
-		return nil
+		return errCResponse("w.CurrentAddress error: %v", err)
 	}
 
-	return cString(addr.String())
+	return resCResponse(addr.String())
 }

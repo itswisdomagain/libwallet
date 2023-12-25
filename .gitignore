@@ -1,1 +1,3 @@
 build/
+cgo/libwallet.h
+cgo/libwallet.so
