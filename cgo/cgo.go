@@ -24,6 +24,7 @@ var (
 	wg        sync.WaitGroup
 
 	logBackend *parentLogger
+	logMtx     sync.RWMutex
 	log        slog.Logger
 
 	walletsMtx sync.RWMutex
@@ -35,33 +36,37 @@ func initialize(cLogDir *C.char) *C.char {
 	walletsMtx.Lock()
 	defer walletsMtx.Unlock()
 	if wallets != nil {
-		return cString("duplicate initialization")
+		return errCResponse("duplicate initialization")
 	}
 
 	logDir := goString(cLogDir)
 	logSpinner, err := assetlog.NewRotator(logDir, "dcrwallet.log")
 	if err != nil {
-		return cStringF("error initializing log rotator: %v", err)
+		return errCResponse("error initializing log rotator: %v", err)
 	}
 
 	logBackend = newParentLogger(logSpinner)
 	err = dcr.InitGlobalLogging(logDir, logBackend)
 	if err != nil {
-		return cStringF("error initializing logger for external pkgs: %v", err)
+		return errCResponse("error initializing logger for external pkgs: %v", err)
 	}
 
+	logMtx.Lock()
 	log = logBackend.SubLogger("[APP]")
 	log.SetLevel(slog.LevelTrace)
+	logMtx.Unlock()
 
 	ctx, cancelCtx = context.WithCancel(context.Background())
 	wallets = make(map[string]*wallet)
 
-	log.Info("libwallet cgo initialized")
-	return nil
+	return successCResponse("libwallet cgo initialized")
 }
 
 //export shutdown
-func shutdown() {
+func shutdown() *C.char {
+	logMtx.RLock()
+	log.Debug("libwallet cgo shutting down")
+	logMtx.RUnlock()
 	walletsMtx.Lock()
 	for _, wallet := range wallets {
 		if err := wallet.CloseWallet(); err != nil {
@@ -76,7 +81,13 @@ func shutdown() {
 	wg.Wait()
 
 	// Close the logger backend as the last step.
+	logMtx.Lock()
+	log.Debug("libwallet cgo shutdown")
 	logBackend.Close()
+	log = nil
+	logMtx.Unlock()
+
+	return successCResponse("libwallet cgo shutdown")
 }
 
 func main() {}
