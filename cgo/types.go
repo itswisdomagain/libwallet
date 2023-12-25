@@ -58,3 +58,28 @@ func resCResponse(payload string) *C.char {
 	logMtx.RUnlock()
 	return cString(string(b))
 }
+
+type SyncStatusCode int
+
+const (
+	SSCNotStarted SyncStatusCode = iota
+	SSCFetchingCFilters
+	SSCFetchingHeaders
+	SSCDiscoveringAddrs
+	SSCRescanning
+	SSCComplete
+)
+
+func (ssc SyncStatusCode) String() string {
+	return [...]string{"not started", "fetching cfilters", "fetching headers",
+		"discovering addresses", "rescanning", "sync complete"}[ssc]
+}
+
+type SyncStatusRes struct {
+	SyncStatusCode int    `json:"syncstatuscode"`
+	SyncStatus     string `json:"syncstatus"`
+	TargetHeight   int    `json:"targetheight"`
+	CFiltersHeight int    `json:"cfiltersheight,omitempty"`
+	HeadersHeight  int    `json:"headersheight,omitempty"`
+	RescanHeight   int    `json:"rescanheight,omitempty"`
+}

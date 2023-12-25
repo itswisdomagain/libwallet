@@ -13,8 +13,7 @@ import (
 // StartSync connects the wallet to the blockchain network via SPV and returns
 // immediately. The wallet stays connected in the background until the provided
 // ctx is canceled or either StopSync or CloseWallet is called.
-// TODO: Accept sync ntfn listeners.
-func (w *Wallet) StartSync(ctx context.Context, connectPeers ...string) error {
+func (w *Wallet) StartSync(ctx context.Context, ntfns *spv.Notifications, connectPeers ...string) error {
 	// Initialize the ctx to use for sync. Will error if sync was already
 	// started.
 	ctx, err := w.InitializeSyncContext(ctx)
@@ -24,13 +23,14 @@ func (w *Wallet) StartSync(ctx context.Context, connectPeers ...string) error {
 
 	w.log.Info("Starting sync...")
 
-	addr := &net.TCPAddr{IP: net.ParseIP("::1"), Port: 0}
+	addr := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0}
 	amgr := addrmgr.New(w.dir, net.LookupIP)
 	lp := p2p.NewLocalPeer(w.ChainParams(), addr, amgr)
 	syncer := spv.NewSyncer(w.mainWallet, lp)
 	if len(connectPeers) > 0 {
 		syncer.SetPersistentPeers(connectPeers)
 	}
+	syncer.SetNotifications(ntfns)
 
 	w.syncer = syncer
 	w.SetNetworkBackend(syncer)

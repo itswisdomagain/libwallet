@@ -4,6 +4,7 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/decred/slog"
 	"github.com/itswisdomagain/libwallet/asset"
@@ -15,6 +16,10 @@ const emptyJsonObject = "{}"
 type wallet struct {
 	*dcr.Wallet
 	log slog.Logger
+
+	syncStatusMtx                                             sync.RWMutex
+	syncStatusCode                                            SyncStatusCode
+	targetHeight, cfiltersHeight, headersHeight, rescanHeight int
 }
 
 //export createWallet
@@ -101,13 +106,13 @@ func loadWallet(cName, cDataDir, cNet *C.char) *C.char {
 }
 
 //export walletSeed
-func walletSeed(name, pass *C.char) *C.char {
-	w, ok := loadedWallet(name)
+func walletSeed(cName, cPass *C.char) *C.char {
+	w, ok := loadedWallet(cName)
 	if !ok {
 		return errCResponse("wallet not loaded")
 	}
 
-	seed, err := w.DecryptSeed([]byte(goString(pass)))
+	seed, err := w.DecryptSeed([]byte(goString(cPass)))
 	if err != nil {
 		return errCResponse("w.DecryptSeed error: %v", err)
 	}
@@ -116,8 +121,8 @@ func walletSeed(name, pass *C.char) *C.char {
 }
 
 //export walletBalance
-func walletBalance(name *C.char) *C.char {
-	w, ok := loadedWallet(name)
+func walletBalance(cName *C.char) *C.char {
+	w, ok := loadedWallet(cName)
 	if !ok {
 		return resCResponse(emptyJsonObject)
 	}
