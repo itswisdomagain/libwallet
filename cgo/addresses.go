@@ -14,7 +14,7 @@ func currentReceiveAddress(cName *C.char) *C.char {
 
 	// Don't return an address if not synced!
 	if !w.IsSynced() {
-		return errCResponse("currentReceiveAddress requested on an unsynced wallet")
+		return errCResponseWithCode(ErrCodeNotSynced, "currentReceiveAddress requested on an unsynced wallet")
 	}
 
 	addr, err := w.CurrentAddress(udb.DefaultAccountNum)
