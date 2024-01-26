@@ -26,7 +26,7 @@ type wallet struct {
 func createWallet(cName, cDataDir, cNet, cPass *C.char) *C.char {
 	walletsMtx.Lock()
 	defer walletsMtx.Unlock()
-	if wallets == nil {
+	if !initialized {
 		return errCResponse("libwallet is not initialized")
 	}
 
@@ -67,7 +67,7 @@ func createWallet(cName, cDataDir, cNet, cPass *C.char) *C.char {
 func loadWallet(cName, cDataDir, cNet *C.char) *C.char {
 	walletsMtx.Lock()
 	defer walletsMtx.Unlock()
-	if wallets == nil {
+	if !initialized {
 		return errCResponse("libwallet is not initialized")
 	}
 
@@ -132,14 +132,14 @@ func walletBalance(cName *C.char) *C.char {
 		return errCResponse("w.AccountBalances error: %v", err)
 	}
 
-	balMap := map[string]float64{
+	balMap := map[string]int64{
 		"confirmed":   0,
 		"unconfirmed": 0,
 	}
 
 	for _, bal := range bals {
-		balMap["confirmed"] += bal.Spendable.ToCoin()
-		balMap["unconfirmed"] += bal.Total.ToCoin() - bal.Spendable.ToCoin()
+		balMap["confirmed"] += int64(bal.Spendable)
+		balMap["unconfirmed"] += int64(bal.Total) - int64(bal.Spendable)
 	}
 
 	balJson, err := json.Marshal(balMap)
@@ -148,4 +148,20 @@ func walletBalance(cName *C.char) *C.char {
 	}
 
 	return successCResponse(string(balJson))
+}
+
+//export closeWallet
+func closeWallet(cName *C.char) *C.char {
+	walletsMtx.Lock()
+	defer walletsMtx.Unlock()
+	name := goString(cName)
+	w, exists := wallets[name]
+	if !exists {
+		return errCResponse("wallet with name %q does not exist", name)
+	}
+	if err := w.CloseWallet(); err != nil {
+		return errCResponse("close wallet %q error: %v", name, err.Error())
+	}
+	delete(wallets, name)
+	return successCResponse("wallet %q shutdown", name)
 }

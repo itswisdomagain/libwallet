@@ -27,15 +27,17 @@ var (
 	logMtx     sync.RWMutex
 	log        slog.Logger
 
-	walletsMtx sync.RWMutex
-	wallets    map[string]*wallet
+	// walletsMtx protects wallets and initialized.
+	walletsMtx  sync.RWMutex
+	wallets     = make(map[string]*wallet)
+	initialized bool
 )
 
 //export initialize
 func initialize(cLogDir *C.char) *C.char {
 	walletsMtx.Lock()
 	defer walletsMtx.Unlock()
-	if wallets != nil {
+	if initialized {
 		return errCResponse("duplicate initialization")
 	}
 
@@ -57,8 +59,8 @@ func initialize(cLogDir *C.char) *C.char {
 	logMtx.Unlock()
 
 	ctx, cancelCtx = context.WithCancel(context.Background())
-	wallets = make(map[string]*wallet)
 
+	initialized = true
 	return successCResponse("libwallet cgo initialized")
 }
 
@@ -68,13 +70,16 @@ func shutdown() *C.char {
 	log.Debug("libwallet cgo shutting down")
 	logMtx.RUnlock()
 	walletsMtx.Lock()
+	defer walletsMtx.Unlock()
+	if !initialized {
+		return errCResponse("not initialized")
+	}
 	for _, wallet := range wallets {
 		if err := wallet.CloseWallet(); err != nil {
 			wallet.log.Errorf("close wallet error: %v", err)
 		}
 	}
-	wallets = nil // cannot be reused unless initialize is called again.
-	walletsMtx.Unlock()
+	wallets = make(map[string]*wallet)
 
 	// Stop all remaining background processes and wait for them to stop.
 	cancelCtx()
@@ -87,6 +92,7 @@ func shutdown() *C.char {
 	log = nil
 	logMtx.Unlock()
 
+	initialized = false
 	return successCResponse("libwallet cgo shutdown")
 }
 
