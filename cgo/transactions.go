@@ -4,7 +4,9 @@ import "C"
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math"
+	"strconv"
 
 	dcrwallet "decred.org/dcrwallet/v3/wallet"
 	"github.com/decred/dcrd/txscript/v4/stdaddr"
@@ -125,4 +127,21 @@ func listUnspents(cName *C.char) *C.char {
 		return errCResponse("unable to marshal list unspents result: %v", err)
 	}
 	return successCResponse(string(b))
+}
+
+//export estimateFee
+func estimateFee(cName, cNBlocks *C.char) *C.char {
+	w, exists := loadedWallet(cName)
+	if !exists {
+		return errCResponse("wallet with name %q does not exist", goString(cName))
+	}
+	nBlocks, err := strconv.ParseUint(goString(cNBlocks), 10, 64)
+	if err != nil {
+		return errCResponse("number of blocks is not a uint64: %v", err)
+	}
+	txFee, err := w.FetchFeeFromOracle(ctx, nBlocks)
+	if err != nil {
+		return errCResponse("unable to get fee from oracle: %v", err)
+	}
+	return successCResponse(fmt.Sprintf("%d", (uint64(txFee * 1e8))))
 }
