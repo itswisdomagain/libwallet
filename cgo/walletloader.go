@@ -4,6 +4,7 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/decred/slog"
 	"github.com/itswisdomagain/libwallet/asset"
@@ -15,6 +16,10 @@ const emptyJsonObject = "{}"
 type wallet struct {
 	*dcr.Wallet
 	log slog.Logger
+
+	syncStatusMtx                                                       sync.RWMutex
+	syncStatusCode                                                      SyncStatusCode
+	targetHeight, cfiltersHeight, headersHeight, rescanHeight, numPeers int
 }
 
 //export createWallet

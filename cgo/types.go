@@ -6,6 +6,12 @@ import (
 	"fmt"
 )
 
+const (
+	// ErrCodeNotSynced is returned when the wallet must be synced to perform an
+	// action but is not.
+	ErrCodeNotSynced = 1
+)
+
 // CResponse is used for all returns when using the cgo libwallet. Payload only
 // populated if no error. Error only populated if error. ErrorCode may be
 // populated if an error needs special handling.
@@ -57,4 +63,30 @@ func successCResponse(payload string) *C.char {
 	}
 	logMtx.RUnlock()
 	return cString(string(b))
+}
+
+type SyncStatusCode int
+
+const (
+	SSCNotStarted SyncStatusCode = iota
+	SSCFetchingCFilters
+	SSCFetchingHeaders
+	SSCDiscoveringAddrs
+	SSCRescanning
+	SSCComplete
+)
+
+func (ssc SyncStatusCode) String() string {
+	return [...]string{"not started", "fetching cfilters", "fetching headers",
+		"discovering addresses", "rescanning", "sync complete"}[ssc]
+}
+
+type SyncStatusRes struct {
+	SyncStatusCode int    `json:"syncstatuscode"`
+	SyncStatus     string `json:"syncstatus"`
+	TargetHeight   int    `json:"targetheight"`
+	NumPeers       int    `json:"numpeers"`
+	CFiltersHeight int    `json:"cfiltersheight,omitempty"`
+	HeadersHeight  int    `json:"headersheight,omitempty"`
+	RescanHeight   int    `json:"rescanheight,omitempty"`
 }
