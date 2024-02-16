@@ -23,14 +23,14 @@ type CResponse struct {
 
 // errCResponse will return an error to the consumer, and log it if possible.
 func errCResponse(errStr string, args ...any) *C.char {
-	es := fmt.Sprintf(errStr, args...)
-	b, err := json.Marshal(CResponse{Error: es})
+	s := fmt.Sprintf(errStr, args...)
+	b, err := json.Marshal(CResponse{Error: s})
 	if err != nil {
 		panic(err)
 	}
 	logMtx.RLock()
 	if log != nil {
-		log.Errorf("returning error to consumer: %v", es)
+		log.Errorf("returning error to consumer: %v", s)
 	}
 	logMtx.RUnlock()
 	return cString(string(b))
@@ -38,28 +38,29 @@ func errCResponse(errStr string, args ...any) *C.char {
 
 // errCResponseWithCode will return an error to the consumer, and log it if possible.
 func errCResponseWithCode(errCode int, errStr string, args ...any) *C.char {
-	es := fmt.Sprintf(errStr, args...)
-	b, err := json.Marshal(CResponse{Error: es, ErrorCode: errCode})
+	s := fmt.Sprintf(errStr, args...)
+	b, err := json.Marshal(CResponse{Error: s, ErrorCode: errCode})
 	if err != nil {
 		panic(err)
 	}
 	logMtx.RLock()
 	if log != nil {
-		log.Errorf("returning error with error code %d to consumer: %v", errCode, es)
+		log.Errorf("returning error with error code %d to consumer: %v", errCode, s)
 	}
 	logMtx.RUnlock()
 	return cString(string(b))
 }
 
 // successCResponse will return a payload the consumer, and log it if possible.
-func successCResponse(payload string) *C.char {
-	b, err := json.Marshal(CResponse{Payload: payload})
+func successCResponse(val string, args ...any) *C.char {
+	s := fmt.Sprintf(val, args...)
+	b, err := json.Marshal(CResponse{Payload: s})
 	if err != nil {
 		panic(err)
 	}
 	logMtx.RLock()
 	if log != nil {
-		log.Tracef("returning payload to consumer: %v", payload)
+		log.Tracef("returning payload to consumer: %v", s)
 	}
 	logMtx.RUnlock()
 	return cString(string(b))
