@@ -3,6 +3,7 @@ package main
 import "C"
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"decred.org/dcrwallet/v3/spv"
@@ -140,4 +141,23 @@ func syncWalletStatus(cName *C.char) *C.char {
 		return errCResponse("unable to marshal sync status result: %v", err)
 	}
 	return successCResponse(string(b))
+}
+
+//export rescanFromHeight
+func rescanFromHeight(cName, cHeight *C.char) *C.char {
+	walletsMtx.Lock()
+	defer walletsMtx.Unlock()
+	name := goString(cName)
+	w, exists := wallets[name]
+	if !exists {
+		return errCResponse("wallet with name %q does not exist", name)
+	}
+	height, err := strconv.ParseUint(goString(cHeight), 10, 32)
+	if err != nil {
+		return errCResponse("height is not an uint32: %v", err)
+	}
+	if err := w.RescanFromHeight(ctx, int32(height)); err != nil {
+		return errCResponse("rescan wallet %q error: %v", name, err.Error())
+	}
+	return successCResponse("rescan from height %d for wallet %q ok", height, name)
 }
