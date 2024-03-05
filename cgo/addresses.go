@@ -28,6 +28,33 @@ func currentReceiveAddress(cName *C.char) *C.char {
 	return successCResponse(addr.String())
 }
 
+//export newExternalAddress
+func newExternalAddress(cName *C.char) *C.char {
+	w, ok := loadedWallet(cName)
+	if !ok {
+		return errCResponse("wallet with name %q is not loaded", goString(cName))
+	}
+
+	// Don't return an address if not synced!
+	if !w.IsSynced() {
+		return errCResponseWithCode(ErrCodeNotSynced, "newExternalAddress requested on an unsynced wallet")
+	}
+
+	_, err := w.NewExternalAddress(ctx, udb.DefaultAccountNum)
+	if err != nil {
+		return errCResponse("w.NewExternalAddress error: %v", err)
+	}
+
+	// NewExternalAddress will take the current address before increasing
+	// the index. Get the current address after increasing the index.
+	addr, err := w.CurrentAddress(udb.DefaultAccountNum)
+	if err != nil {
+		return errCResponse("w.CurrentAddress error: %v", err)
+	}
+
+	return successCResponse(addr.String())
+}
+
 //export signMessage
 func signMessage(cName, cMessage, cAddress, cPassword *C.char) *C.char {
 	w, ok := loadedWallet(cName)
