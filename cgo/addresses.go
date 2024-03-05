@@ -2,7 +2,10 @@ package main
 
 import "C"
 import (
+	"encoding/base64"
+
 	"decred.org/dcrwallet/v3/wallet/udb"
+	"github.com/decred/dcrd/txscript/v4/stdaddr"
 )
 
 //export currentReceiveAddress
@@ -23,4 +26,30 @@ func currentReceiveAddress(cName *C.char) *C.char {
 	}
 
 	return successCResponse(addr.String())
+}
+
+//export signMessage
+func signMessage(cName, cMessage, cAddress, cPassword *C.char) *C.char {
+	w, ok := loadedWallet(cName)
+	if !ok {
+		return errCResponse("wallet with name %q is not loaded", goString(cName))
+	}
+
+	addr, err := stdaddr.DecodeAddress(goString(cAddress), w.MainWallet().ChainParams())
+	if err != nil {
+		return errCResponse("unable to decode address: %v", err)
+	}
+
+	if err := w.MainWallet().Unlock(ctx, []byte(goString(cPassword)), nil); err != nil {
+		return errCResponse("cannot unlock wallet: %v", err)
+	}
+
+	sig, err := w.MainWallet().SignMessage(ctx, goString(cMessage), addr)
+	if err != nil {
+		return errCResponse("unable to sign message: %v", err)
+	}
+
+	sEnc := base64.StdEncoding.EncodeToString(sig)
+
+	return successCResponse(sEnc)
 }
