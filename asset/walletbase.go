@@ -2,6 +2,7 @@ package asset
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"sync"
 
@@ -51,7 +52,9 @@ func NewWalletBase(params OpenWalletParams, seed, walletPass []byte, traits Wall
 	// Account discovery is only required for restored wallets.
 	accountDiscoveryRequired := isRestored
 
-	// TODO: Save wallet data to db.
+	if err := saveWalletData(encryptedSeed, params.DataDir); err != nil {
+		return nil, err
+	}
 
 	return &WalletBase{
 		log:                      params.Logger,
@@ -67,14 +70,23 @@ func NewWalletBase(params OpenWalletParams, seed, walletPass []byte, traits Wall
 // OpenWalletBase loads basic information for an existing wallet from the
 // provided params.
 func OpenWalletBase(params OpenWalletParams) (*WalletBase, error) {
-	w := &WalletBase{
-		log:        params.Logger,
-		dataDir:    params.DataDir,
-		network:    params.Net,
-		syncHelper: &syncHelper{log: params.Logger},
+	wd, err := getWalletData(params.DataDir)
+	if err != nil {
+		return nil, err
 	}
 
-	// TODO: Read wallet data from db.
+	encSeed, err := hex.DecodeString(wd.EncryptedSeedHex)
+	if err != nil {
+		return nil, fmt.Errorf("unable to decode encrypted hex seed: %v", err)
+	}
+
+	w := &WalletBase{
+		log:           params.Logger,
+		dataDir:       params.DataDir,
+		network:       params.Net,
+		syncHelper:    &syncHelper{log: params.Logger},
+		encryptedSeed: encSeed,
+	}
 
 	return w, nil
 }
@@ -117,7 +129,9 @@ func (w *WalletBase) ReEncryptSeed(oldPass, newPass []byte) error {
 		return err
 	}
 
-	// TODO: Save reEncryptedSeed to db.
+	if err := saveWalletData(reEncryptedSeed, w.dataDir); err != nil {
+		return err
+	}
 
 	w.encryptedSeed = reEncryptedSeed
 	return nil
