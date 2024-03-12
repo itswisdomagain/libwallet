@@ -165,3 +165,19 @@ func closeWallet(cName *C.char) *C.char {
 	delete(wallets, name)
 	return successCResponse("wallet %q shutdown", name)
 }
+
+//export changePassphrase
+func changePassphrase(cName, cOldPass, cNewPass *C.char) *C.char {
+	w, ok := loadedWallet(cName)
+	if !ok {
+		return errCResponse("wallet with name %q not loaded", goString(cName))
+	}
+
+	err := w.MainWallet().ChangePrivatePassphrase(ctx, []byte(goString(cOldPass)),
+		[]byte(goString(cNewPass)))
+	if err != nil {
+		return errCResponse("w.ChangePrivatePassphrase error: %v", err)
+	}
+
+	return successCResponse("passphrase changed")
+}
