@@ -3,6 +3,7 @@ package main
 import "C"
 import (
 	"encoding/base64"
+	"encoding/json"
 
 	"decred.org/dcrwallet/v3/wallet/udb"
 	"github.com/decred/dcrd/txscript/v4/stdaddr"
@@ -79,4 +80,33 @@ func signMessage(cName, cMessage, cAddress, cPassword *C.char) *C.char {
 	sEnc := base64.StdEncoding.EncodeToString(sig)
 
 	return successCResponse(sEnc)
+}
+
+//export addresses
+func addresses(cName *C.char) *C.char {
+	w, ok := loadedWallet(cName)
+	if !ok {
+		return errCResponse("wallet with name %q is not loaded", goString(cName))
+	}
+
+	addrs, err := w.AddressesByAccount(ctx, defaultAccount)
+	if err != nil {
+		return errCResponse("w.AddressesByAccount error: %v", err)
+	}
+
+	// w.AddressesByAccount does not include the current address.
+	if w.IsSynced() {
+		addr, err := w.CurrentAddress(udb.DefaultAccountNum)
+		if err != nil {
+			return errCResponse("w.CurrentAddress error: %v", err)
+		}
+		addrs = append(addrs, addr.String())
+	}
+
+	b, err := json.Marshal(addrs)
+	if err != nil {
+		return errCResponse("unable to marshal addresses: %v", err)
+	}
+
+	return successCResponse(string(b))
 }
