@@ -10,9 +10,13 @@ require (
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.0
 	github.com/dcrlabs/neutrino-ltc v0.0.0-20221031001456-55ef06cefead
 	github.com/decred/dcrd/addrmgr/v2 v2.0.2
+	github.com/decred/dcrd/chaincfg/chainhash v1.0.4
 	github.com/decred/dcrd/chaincfg/v3 v3.2.0
 	github.com/decred/dcrd/connmgr/v3 v3.1.1
+	github.com/decred/dcrd/dcrutil/v4 v4.0.1
 	github.com/decred/dcrd/hdkeychain/v3 v3.1.1
+	github.com/decred/dcrd/txscript/v4 v4.1.0
+	github.com/decred/dcrd/wire v1.6.0
 	github.com/decred/slog v1.2.0
 	github.com/jrick/logrotate v1.0.0
 	github.com/kevinburke/nacl v0.0.0-20210405173606-cd9060f5f776
@@ -43,7 +47,6 @@ require (
 	github.com/decred/base58 v1.0.5 // indirect
 	github.com/decred/dcrd/blockchain/stake/v5 v5.0.0 // indirect
 	github.com/decred/dcrd/blockchain/standalone/v2 v2.2.0 // indirect
-	github.com/decred/dcrd/chaincfg/chainhash v1.0.4 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.0.1 // indirect
 	github.com/decred/dcrd/crypto/ripemd160 v1.0.2 // indirect
 	github.com/decred/dcrd/database/v3 v3.0.1 // indirect
@@ -51,12 +54,9 @@ require (
 	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.3 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
 	github.com/decred/dcrd/dcrjson/v4 v4.0.1 // indirect
-	github.com/decred/dcrd/dcrutil/v4 v4.0.1 // indirect
 	github.com/decred/dcrd/gcs/v4 v4.0.0 // indirect
 	github.com/decred/dcrd/lru v1.1.1 // indirect
 	github.com/decred/dcrd/rpc/jsonrpc/types/v4 v4.0.0 // indirect
-	github.com/decred/dcrd/txscript/v4 v4.1.0 // indirect
-	github.com/decred/dcrd/wire v1.6.0 // indirect
 	github.com/decred/go-socks v1.1.0 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"decred.org/dcrwallet/v3/walletseed"
 	"github.com/decred/slog"
 	"github.com/itswisdomagain/libwallet/asset"
 	"github.com/itswisdomagain/libwallet/asset/dcr"
@@ -23,7 +24,7 @@ type wallet struct {
 }
 
 //export createWallet
-func createWallet(cName, cDataDir, cNet, cPass *C.char) *C.char {
+func createWallet(cName, cDataDir, cNet, cPass, cMnemonic *C.char) *C.char {
 	walletsMtx.Lock()
 	defer walletsMtx.Unlock()
 	if !initialized {
@@ -51,7 +52,18 @@ func createWallet(cName, cDataDir, cNet, cPass *C.char) *C.char {
 		},
 		Pass: []byte(goString(cPass)),
 	}
-	w, err := dcr.CreateWallet(ctx, params, nil)
+
+	mnemonicStr := goString(cMnemonic)
+	var recoveryConfig *asset.RecoveryCfg
+	if mnemonicStr != "" {
+		seed, err := walletseed.DecodeUserInput(mnemonicStr)
+		if err != nil {
+			return errCResponse("unable to decode wallet mnemonic: %v", err)
+		}
+		recoveryConfig = &asset.RecoveryCfg{Seed: seed}
+	}
+
+	w, err := dcr.CreateWallet(ctx, params, recoveryConfig)
 	if err != nil {
 		return errCResponse(err.Error())
 	}
@@ -164,4 +176,20 @@ func closeWallet(cName *C.char) *C.char {
 	}
 	delete(wallets, name)
 	return successCResponse("wallet %q shutdown", name)
+}
+
+//export changePassphrase
+func changePassphrase(cName, cOldPass, cNewPass *C.char) *C.char {
+	w, ok := loadedWallet(cName)
+	if !ok {
+		return errCResponse("wallet with name %q not loaded", goString(cName))
+	}
+
+	err := w.MainWallet().ChangePrivatePassphrase(ctx, []byte(goString(cOldPass)),
+		[]byte(goString(cNewPass)))
+	if err != nil {
+		return errCResponse("w.ChangePrivatePassphrase error: %v", err)
+	}
+
+	return successCResponse("passphrase changed")
 }

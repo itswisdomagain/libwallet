@@ -77,3 +77,8 @@ func (w *Wallet) IsSynced() bool {
 	}
 	return false
 }
+
+// RescanFromHeight rescans the wallet from the specified height.
+func (w *Wallet) RescanFromHeight(ctx context.Context, startHeight int32) error {
+	return w.mainWallet.RescanFromHeight(ctx, w.syncer, startHeight)
+}

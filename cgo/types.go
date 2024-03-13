@@ -4,6 +4,8 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
+
+	wallettypes "decred.org/dcrwallet/v3/rpc/jsonrpc/types"
 )
 
 const (
@@ -90,4 +92,38 @@ type SyncStatusRes struct {
 	CFiltersHeight int    `json:"cfiltersheight,omitempty"`
 	HeadersHeight  int    `json:"headersheight,omitempty"`
 	RescanHeight   int    `json:"rescanheight,omitempty"`
+}
+
+type Input struct {
+	TxID string `json:"txid"`
+	Vout int    `json:"vout"`
+}
+
+type Output struct {
+	Address string `json:"address"`
+	Amount  int    `json:"amount"`
+}
+
+type CreateSignedTxReq struct {
+	Outputs      []Output `json:"outputs"`
+	Inputs       []Input  `json:"inputs"`
+	IgnoreInputs []Input  `json:"ignoreinputs"`
+	FeeRate      int      `json:"feerate"`
+	Password     string   `json:"password"`
+}
+
+type CreateSignedTxRes struct {
+	SignedHex string `json:"signedhex"`
+	Txid      string `json:"txid"`
+	Fee       int    `json:"fee"`
+}
+
+type ListUnspentRes struct {
+	*wallettypes.ListUnspentResult
+	IsChange bool `json:"ischange"`
+}
+
+type BestBlockRes struct {
+	Hash   string `json:"hash"`
+	Height int    `json:"height"`
 }
