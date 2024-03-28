@@ -122,3 +122,18 @@ type ListUnspentRes struct {
 	*wallettypes.ListUnspentResult
 	IsChange bool `json:"ischange"`
 }
+
+type BestBlockRes struct {
+	Hash   string `json:"hash"`
+	Height int    `json:"height"`
+}
+
+type ListTransactionRes struct {
+	Address       string   `json:"address,omitempty"`
+	Amount        float64  `json:"amount"`
+	Category      string   `json:"category"`
+	Confirmations int64    `json:"confirmations"`
+	Fee           *float64 `json:"fee,omitempty"`
+	Time          int64    `json:"time"`
+	TxID          string   `json:"txid"`
+}
